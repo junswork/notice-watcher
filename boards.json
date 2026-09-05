@@ -1,0 +1,17 @@
+[
+  {
+    "name": "대학공지사항",
+    "url": "https://www.seoultech.ac.kr/service/info/notice/",
+    "bot": "KAKAOWORK_APP_KEY_NOTICE"
+  },
+  {
+    "name": "학사공지",
+    "url": "https://www.seoultech.ac.kr/service/info/matters",
+    "bot": "KAKAOWORK_APP_KEY_MATTERS"
+  },
+  {
+    "name": "생활관 공지",
+    "url": "https://housing.seoultech.ac.kr/community/notice",
+    "bot": "KAKAOWORK_APP_KEY_HOUSING"
+  }
+]

@@ -1,0 +1,64 @@
+name: 공지사항 감시
+
+on:
+  schedule:
+    # 15분마다. 깃허브 사정에 따라 몇 분 늦게 돌 때가 있다(정상이다).
+    # 비공개 저장소면 무료 사용량(월 2000분)을 넘으므로 '*/30' 으로 늘리세요.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:        # 저장소 Actions 탭에서 손으로 즉시 실행
+
+permissions:
+  contents: write           # state.json 을 되커밋하기 위해 필요하다
+
+concurrency:
+  group: notice-watch       # 앞 실행이 안 끝났으면 겹쳐 돌지 않는다
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 게시판 확인
+        id: run
+        continue-on-error: true       # 실패해도 아래 커밋 단계까지는 간다
+        env:
+          KAKAOWORK_USER_EMAIL: ${{ secrets.KAKAOWORK_USER_EMAIL }}
+          # 게시판별 봇. boards.json 의 "bot" 이름과 반드시 같아야 한다.
+          # 게시판을 추가하면 여기에도 한 줄 넣어야 한다 — 깃허브는 등록한
+          # Secret 을 이름으로 나열해 줘야만 넘겨준다.
+          KAKAOWORK_APP_KEY_NOTICE: ${{ secrets.KAKAOWORK_APP_KEY_NOTICE }}
+          KAKAOWORK_APP_KEY_MATTERS: ${{ secrets.KAKAOWORK_APP_KEY_MATTERS }}
+          KAKAOWORK_APP_KEY_HOUSING: ${{ secrets.KAKAOWORK_APP_KEY_HOUSING }}
+          KAKAOWORK_APP_KEY_EPIC: ${{ secrets.KAKAOWORK_APP_KEY_EPIC }}
+          # 에픽폴리오는 로그인이 필요하다. 통합 계정 아이디·비밀번호.
+          EPIC_ID: ${{ secrets.EPIC_ID }}
+          EPIC_PW: ${{ secrets.EPIC_PW }}
+          # 위 봇이 아직 없는 게시판이 쓰는 공용 봇
+          KAKAOWORK_APP_KEY: ${{ secrets.KAKAOWORK_APP_KEY }}
+        run: python watch.py
+
+      - name: 확인 결과 저장
+        # 성공한 부분까지는 반드시 남긴다. 남기지 않으면 다음 실행이
+        # 이미 알린 공지를 새 글로 착각해 같은 알림을 또 보낸다.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet && echo "변화 없음" && exit 0
+          git commit -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      - name: 실패했으면 빨간불로 남긴다
+        if: steps.run.outcome == 'failure'
+        run: |
+          echo "감시 중 일부 실패. 위 '게시판 확인' 로그를 보세요."
+          exit 1
