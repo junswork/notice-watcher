@@ -19,6 +19,7 @@
 넣으면 매 실행이 '수정됨' 이 된다.
 """
 
+import datetime
 import difflib
 import hashlib
 import html as html_mod
@@ -52,6 +53,16 @@ FULL_SCAN = os.getenv("WATCH_MODE", "full").lower() == "full"
 # 마지막으로 확인한 시각을 담아 두는 자리. 게시물 번호는 숫자 문자열이라
 # 이 이름과 부딪히지 않는다.
 CHECKED_KEY = "__checked__"
+FAILURE_KEY = "__failures__"
+
+# 감시가 죽어도 알림이 안 오면 '공지가 없어서 조용한 것' 과 구분되지 않는다.
+# 믿고 있는데 실은 안 도는 상태가 제일 나쁘므로, 연달아 실패하면 알린다.
+# 한 번 실패로는 알리지 않는다 — 학교 서버가 잠깐 느린 일은 흔하다.
+FAILURE_THRESHOLD = int(os.getenv("FAILURE_THRESHOLD", "3"))
+FAILURE_REPEAT_HOURS = float(os.getenv("FAILURE_REPEAT_HOURS", "24"))
+
+# 매일 아침 살아 있다는 신호를 보낼지. 워크플로가 그 시각에만 켜 준다.
+HEARTBEAT = os.getenv("HEARTBEAT", "") not in ("", "0", "false")
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -278,7 +289,7 @@ def check_board(
             if first_run:
                 fresh[bidx] = record
             else:
-                events.append((bidx, "새 글", record, ""))
+                events.append((bidx, "새 글", record, excerpt(detail["body"])))
         elif old.get("hash") != digest:
             what = []
             if old.get("title") != detail["title"]:
@@ -305,11 +316,62 @@ def check_board(
     return events, fresh
 
 
+def is_korean_holiday(now_utc: float | None = None) -> bool:
+    """오늘(한국 날짜)이 공휴일인가.
+
+    설날·추석은 음력이라 직접 셀 수 없고 대체공휴일 규칙까지 있어 holidays 를
+    쓴다. 판단이 안 되면 공휴일이 아닌 것으로 본다 — 생존 신호가 한 번 더 오는
+    편이, 쉬는 날인 줄 알고 안 보냈다가 정말 멈춘 것을 놓치는 것보다 낫다.
+    """
+    kst = datetime.datetime.fromtimestamp(
+        now_utc if now_utc is not None else time.time(), datetime.timezone.utc
+    ) + datetime.timedelta(hours=9)
+    try:
+        import holidays
+    except ImportError:
+        print("[생존] holidays 가 없어 공휴일을 가리지 않습니다.")
+        return False
+    return kst.date() in holidays.SouthKorea(years=kst.year)
+
+
+def heartbeat_message(state: dict, boards: list, failures: dict) -> str:
+    """살아 있다는 신호. 조용한 것이 '공지가 없어서' 인지 '멈춰서' 인지 가른다."""
+    kst = datetime.datetime.fromtimestamp(
+        time.time(), datetime.timezone.utc
+    ) + datetime.timedelta(hours=9)
+    요일 = "월화수목금토일"[kst.weekday()]
+    lines = [
+        "[생존 신호] 공지사항 알림이 정상 작동 중",
+        f"{kst:%Y-%m-%d} ({요일}) {kst:%H:%M}",
+        "",
+    ]
+    for board in boards:
+        name = board["name"]
+        tracked = len(state.get(name, {}))
+        mark = "" if name not in failures else f"  ← 연속 {failures[name]['count']}회 실패 중"
+        lines.append(f"{name} {tracked}건 추적{mark}")
+    if failures:
+        lines += ["", "실패한 게시판이 있습니다. Actions 탭의 실행 기록을 보세요."]
+    return "\n".join(lines)
+
+
+def excerpt(body: str, max_lines: int = 3, max_chars: int = 220) -> str:
+    """본문 앞부분. 폰에서 링크를 열지 않고도 나와 상관있는 글인지 가른다.
+
+    새 글은 어차피 상세를 열어 본문을 이미 갖고 있으므로 덧붙이는 값이 거의
+    들지 않는다.
+    """
+    lines = [ln for ln in body.split("\n") if ln.strip()][:max_lines]
+    out = "\n".join(lines)
+    return out[:max_chars] + "…" if len(out) > max_chars else out
+
+
 def format_message(kind: str, board_name: str, record: dict, detail: str) -> str:
     head = "[새 공지]" if kind == "새 글" else "[공지 수정]"
+    label = "-- 내용 --" if kind == "새 글" else "-- 바뀐 내용 --"
     lines = [f"{head} {board_name}", "", record["title"], f"작성일 {record['date']}"]
     if detail:
-        lines += ["", "-- 바뀐 내용 --", detail]
+        lines += ["", label, detail]
     lines += ["", record["url"]]
     return "\n".join(lines)
 
@@ -324,6 +386,10 @@ def main() -> int:
     print("확인 범위:", "새 글 + 수정" if FULL_SCAN else "새 글만")
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
+
+    # 잘 도는 동안에는 이 자리를 비워 둔다. 값이 남아 있으면 그 내용이 계속
+    # 바뀌면서 새 공지가 없는 날에도 state.json 커밋이 생긴다.
+    failures = dict(state.get(FAILURE_KEY, {}))
 
     failed = False
     for board in boards:
@@ -354,7 +420,25 @@ def main() -> int:
             # 이 게시판의 상태는 건드리지 않는다. 다음 실행에서 다시 본다.
             print(f"[{name}] 확인 실패: {exc}")
             failed = True
+            record = failures.get(name) or {"count": 0, "notified": 0}
+            record["count"] += 1
+            due = time.time() - record["notified"] >= FAILURE_REPEAT_HOURS * 3600
+            if record["count"] >= FAILURE_THRESHOLD and due:
+                warning = "\n".join([
+                    f"[감시 실패] {name}",
+                    "",
+                    f"연속 {record['count']}회 확인하지 못했습니다.",
+                    f"마지막 오류: {str(exc)[:300]}",
+                    "",
+                    "이 게시판의 새 공지를 놓치고 있는 중입니다.",
+                    "깃허브 저장소 Actions 탭에서 실행 기록을 확인하세요.",
+                ])
+                if notify.send(warning, app_key):
+                    record["notified"] = time.time()
+            failures[name] = record
             continue
+
+        failures.pop(name, None)   # 한 번 성공하면 실패 횟수를 지운다
 
         # 알림을 먼저 보내고, 보내는 데 성공한 것만 상태에 남긴다. 순서를
         # 뒤집으면 전송이 실패했을 때 그 공지는 영영 다시 알려주지 않는다.
@@ -368,6 +452,22 @@ def main() -> int:
         state[name] = fresh
         mark_checked(state, name, interval)
         print(f"[{name}] 사건 {len(events)}건, 추적 {len(fresh)}건")
+
+    if failures:
+        state[FAILURE_KEY] = failures
+    else:
+        state.pop(FAILURE_KEY, None)
+
+    if HEARTBEAT:
+        if is_korean_holiday():
+            print("[생존] 공휴일이라 생존 신호를 보내지 않습니다.")
+        else:
+            key = next(
+                (os.getenv(b.get("bot", ""), "") for b in boards if os.getenv(b.get("bot", ""), "")),
+                os.getenv("KAKAOWORK_APP_KEY", ""),
+            )
+            if not notify.send(heartbeat_message(state, boards, failures), key):
+                failed = True
 
     save_state(state)
     return 1 if failed else 0

@@ -190,6 +190,64 @@ def test_min_interval():
     assert "대학공지" not in state[watch.CHECKED_KEY], state[watch.CHECKED_KEY]
 
 
+def test_excerpt():
+    """새 글 알림에 붙는 본문 앞부분."""
+    assert watch.excerpt("") == ""
+    assert watch.excerpt("한 줄\n\n두 줄\n세 줄\n네 줄") == "한 줄\n두 줄\n세 줄"
+    long = watch.excerpt("가" * 500)
+    assert len(long) == 221 and long.endswith("…"), len(long)
+
+
+def test_new_post_message_has_body():
+    """새 글 알림에 본문이 들어가고, 제목은 '내용' 으로 붙는다."""
+    msg = watch.format_message(
+        "새 글", "대학공지사항",
+        {"title": "장학금 신청", "date": "2026-09-08", "url": "https://x/1"},
+        "9월 20일까지 신청",
+    )
+    assert "[새 공지]" in msg and "-- 내용 --" in msg, msg
+    assert "9월 20일까지 신청" in msg and "https://x/1" in msg
+    assert "바뀐 내용" not in msg
+
+    fixed = watch.format_message(
+        "수정됨", "대학공지사항",
+        {"title": "장학금 신청", "date": "2026-09-08", "url": "https://x/1"},
+        "삭제: 9월 20일",
+    )
+    assert "[공지 수정]" in fixed and "-- 바뀐 내용 --" in fixed, fixed
+
+
+def test_holiday_skip():
+    """생존 신호는 공휴일에 보내지 않는다. 음력 명절도 걸러져야 한다."""
+    import calendar
+    import datetime as dt
+
+    def at(y, m, d):
+        # 한국 시간 09:02 를 UTC 기준 초로 바꾼다.
+        kst = dt.datetime(y, m, d, 9, 2) - dt.timedelta(hours=9)
+        return calendar.timegm(kst.timetuple())
+
+    assert watch.is_korean_holiday(at(2026, 2, 17)), "설날을 못 걸렀다"
+    assert watch.is_korean_holiday(at(2026, 9, 25)), "추석을 못 걸렀다"
+    assert watch.is_korean_holiday(at(2026, 3, 2)), "대체 휴일을 못 걸렀다"
+    assert watch.is_korean_holiday(at(2027, 1, 1)), "해가 바뀌어도 걸러야 한다"
+    assert not watch.is_korean_holiday(at(2026, 9, 8)), "평일을 공휴일로 봤다"
+
+
+def test_heartbeat_message():
+    state = {"대학공지사항": {"1": {}, "2": {}}, "에픽": {"a": {}}}
+    boards = [{"name": "대학공지사항"}, {"name": "에픽"}]
+
+    msg = watch.heartbeat_message(state, boards, {})
+    assert "정상 작동 중" in msg
+    assert "대학공지사항 2건 추적" in msg and "에픽 1건 추적" in msg, msg
+    assert "실패" not in msg
+
+    # 실패 중인 게시판이 있으면 생존 신호에 같이 적는다.
+    bad = watch.heartbeat_message(state, boards, {"에픽": {"count": 4, "notified": 0}})
+    assert "연속 4회 실패 중" in bad, bad
+
+
 def test_epic_parse_list():
     """비교과 목록: 항목 안에 <li> 가 중첩돼 있어도 항목별로 갈라야 한다."""
     import epic

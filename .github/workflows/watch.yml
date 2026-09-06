@@ -12,6 +12,9 @@ on:
     #
     # [수정까지] 게시물 상세를 전부 다시 읽는다. 접속이 많아 하루 두 번만.
     - cron: "7 4,13 * * *"         # 13:07, 22:07 (KST). 위 일정과 분이 겹치지 않게 7분
+    #
+    # [생존 신호] 평일 아침에 살아 있다고 알린다. 공휴일은 코드에서 거른다.
+    - cron: "2 0 * * 1-5"          # 평일 09:02 (KST)
   workflow_dispatch:
     inputs:
       mode:
@@ -47,6 +50,7 @@ jobs:
           # 어느 일정이 깨웠는지로 확인 범위를 정한다. 손으로 돌릴 때는
           # 위 선택칸의 값을 쓰고, 아무것도 안 고르면 새 글만 본다.
           WATCH_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '7 4,13 * * *' && 'full' || 'new') }}
+          HEARTBEAT: ${{ github.event.schedule == '2 0 * * 1-5' && '1' || '' }}
           KAKAOWORK_USER_EMAIL: ${{ secrets.KAKAOWORK_USER_EMAIL }}
           # 게시판별 봇. boards.json 의 "bot" 이름과 반드시 같아야 한다.
           # 게시판을 추가하면 여기에도 한 줄 넣어야 한다 — 깃허브는 등록한
