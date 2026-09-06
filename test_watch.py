@@ -169,6 +169,105 @@ def test_new_mode_skips_known_posts():
         watch.fetch = real_fetch
 
 
+def test_min_interval():
+    """뜸하게 봐야 하는 게시판은 일정이 자주 깨워도 건너뛴다."""
+    import time
+
+    state = {}
+    assert watch.is_due(state, "에픽", 120), "기록이 없으면 확인해야 한다"
+    watch.mark_checked(state, "에픽")
+    assert not watch.is_due(state, "에픽", 120), "방금 봤으면 건너뛴다"
+    assert watch.is_due(state, "에픽", 0), "간격 0 이면 항상 확인한다"
+    assert watch.is_due(state, "다른게시판", 120), "게시판마다 따로 센다"
+
+    # 시간이 지나면 다시 확인한다.
+    state[watch.CHECKED_KEY]["에픽"] = time.time() - 121 * 60
+    assert watch.is_due(state, "에픽", 120)
+
+
+def test_epic_parse_list():
+    """비교과 목록: 항목 안에 <li> 가 중첩돼 있어도 항목별로 갈라야 한다."""
+    import epic
+
+    item = """<li><div class="left"><span class="type02">인정</span></div>
+    <div class="right"><div class="top">
+    <a href="#" class="detailBtn" data-params='{{"encSddpbSeq":"{seq}"}}'>
+    <span class="p_col">[70점]</span>{title}</a>
+    <ul><li>창의역량</li><li>융합역량</li></ul></div>
+    <div class="bottom"><dl><dt>운영조직</dt><dd>{org}</dd></dl>
+    <dl><dt>전화번호</dt><dd>02-970-0000</dd></dl>
+    <dl class="target"><dt>신청대상</dt><dd><span>전체</span><span>전체</span></dd></dl>
+    <dl><dt>신청기간</dt><dd>2026.09.03 11:00&nbsp;~&nbsp;2026.09.08 18:00</dd></dl>
+    <dl><dt>신청현황</dt><dd><div class="app_num">
+    <span class="current">5</span>/<span class="max">18</span>명</div></dd></dl>
+    </div></div></li>"""
+    page = "<ul>" + item.format(seq="aaa", title="레이저커팅기 장비교육", org="창업지원단") \
+                + item.format(seq="bbb", title="현대건설 채용설명회", org="취업진로본부") + "</ul>"
+
+    out = epic.parse_list(page)
+    assert len(out) == 2, out
+    assert out[0]["title"] == "레이저커팅기 장비교육", out[0]
+    assert out[0]["org"] == "창업지원단", out[0]
+    assert out[1]["org"] == "취업진로본부", out[1]
+    assert out[0]["applied"] == "5/18명", out[0]
+    assert out[0]["apply_period"] == "2026.09.03 11:00 ~ 2026.09.08 18:00", out[0]
+    assert out[0]["target"] == "전체", out[0]["target"]   # 중복 제거
+    assert "[70점]" not in out[0]["title"]
+
+
+def test_epic_auto_submit_form():
+    """통합 로그인 중간에 나오는 '자동 제출 폼' 만 대신 보내야 한다.
+
+    사람이 채우는 로그인 창까지 보내 버리면 빈 아이디로 로그인을 다시
+    시도하게 된다. 연속 실패는 계정 잠금으로 이어지므로 반드시 걸러야 한다.
+    """
+    import epic
+
+    auto = (
+        '<html><body onload="document.forms[0].submit()">'
+        '<form action="/next" method="post">'
+        '<input type="hidden" name="SAMLResponse" value="abc" />'
+        '<input name="RelayState" value="xyz" />'
+        "</form></body></html>"
+    )
+    human = (
+        '<form id="ssoLog" action="/login" method="post">'
+        '<input type="hidden" name="userId" value="" />'
+        '<input type="text" id="encIi" value="" />'
+        '<input type="password" id="encPp" />'
+        "</form>"
+    )
+
+    assert epic._inputs(auto) == {"SAMLResponse": "abc", "RelayState": "xyz"}
+
+    class FakeResp:
+        def __init__(self, text, url="https://portal.x.ac.kr/a"):
+            self.text, self.url = text, url
+
+    sent = []
+
+    class FakeSession:
+        def post(self, url, data=None, timeout=None):
+            sent.append((url, data))
+            return FakeResp("<html>끝</html>")
+
+        def get(self, url, params=None, timeout=None):
+            sent.append((url, params))
+            return FakeResp("<html>끝</html>")
+
+    # 자동 제출 폼은 따라간다.
+    epic.follow_auto_submit(FakeSession(), FakeResp(auto))
+    assert sent == [
+        ("https://portal.x.ac.kr/next", {"SAMLResponse": "abc", "RelayState": "xyz"})
+    ], sent
+
+    # 사람이 채우는 창은 건드리지 않는다.
+    sent.clear()
+    out = epic.follow_auto_submit(FakeSession(), FakeResp(human))
+    assert sent == [], f"로그인 창을 다시 보냈다: {sent}"
+    assert out.text == human
+
+
 def test_live():
     import json, requests
 

@@ -31,6 +31,7 @@ from urllib.parse import urljoin
 
 import requests
 
+import epic
 import notify
 
 STATE_FILE = os.getenv("STATE_FILE", "state.json")
@@ -47,6 +48,10 @@ REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.3"))
 # "full" = 목록에 걸린 글의 상세를 전부 다시 읽어 본문이 바뀌었는지 본다.
 #          게시판당 접속이 스물몇 번이라 하루 몇 번만 돌린다.
 FULL_SCAN = os.getenv("WATCH_MODE", "full").lower() == "full"
+
+# 마지막으로 확인한 시각을 담아 두는 자리. 게시물 번호는 숫자 문자열이라
+# 이 이름과 부딪히지 않는다.
+CHECKED_KEY = "__checked__"
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -125,6 +130,64 @@ def body_diff(old: str, new: str, max_lines: int = 6) -> str:
     more = len(changes) - len(shown)
     out = "\n".join(("삭제: " if c[0] == "-" else "추가: ") + c[1:].strip()[:100] for c in shown)
     return out + (f"\n… 외 {more}줄" if more > 0 else "")
+
+
+def is_due(state: dict, name: str, min_interval_min: float) -> bool:
+    """게시판마다 최소 확인 간격을 둔다.
+
+    로그인해서 보는 게시판은 자주 두드리면 봇으로 몰린다. 일정은 가장 잦은
+    게시판에 맞춰 놓고, 뜸하게 봐야 하는 게시판은 여기서 걸러 낸다.
+    """
+    if min_interval_min <= 0:
+        return True
+    last = state.get(CHECKED_KEY, {}).get(name)
+    if not last:
+        return True
+    return (time.time() - float(last)) >= min_interval_min * 60
+
+
+def mark_checked(state: dict, name: str) -> None:
+    state.setdefault(CHECKED_KEY, {})[name] = time.time()
+
+
+def check_epic(session: requests.Session, board: dict, seen: dict) -> tuple[list, dict]:
+    """에픽폴리오 비교과 프로그램. 새로 올라온 것만 본다.
+
+    다른 게시판과 달리 상세 페이지를 열지 않는다(요청). 프로그램을 제목으로
+    구분한다 — 목록에 있는 encSddpbSeq 는 암호화된 값이라 세션마다 달라질 수
+    있고, 그걸 열쇠로 삼으면 매 실행이 '전부 새 프로그램' 이 될 수 있다.
+    """
+    items = epic.parse_list(epic.fetch_list(session))
+    if not items:
+        raise RuntimeError("프로그램을 하나도 못 찾았습니다. 화면 구조가 바뀌었을 수 있습니다.")
+
+    first_run = not seen
+    events, fresh = [], dict(seen)
+    for item in items:
+        key = hashlib.sha256(item["title"].encode("utf-8")).hexdigest()[:16]
+        record = {
+            "title": item["title"],
+            "date": item["apply_period"],
+            "url": epic.LIST_URL,
+            "org": item["org"],
+            "applied": item["applied"],
+            "target": item["target"],
+        }
+        if key in seen:
+            continue
+        if first_run:
+            fresh[key] = record
+        else:
+            detail = "\n".join([
+                f"운영조직 {item['org']}",
+                f"신청대상 {item['target']}",
+                f"신청현황 {item['applied']}",
+            ])
+            events.append((key, "새 글", record, detail))
+
+    if first_run:
+        print(f"[{board['name']}] 첫 실행 — 프로그램 {len(fresh)}건을 기준으로 저장합니다(알림 없음).")
+    return events, fresh
 
 
 def load_json(path: str, default):
@@ -266,8 +329,17 @@ def main() -> int:
             app_key = os.getenv("KAKAOWORK_APP_KEY", "")
             if board.get("bot"):
                 print(f"[{name}] {board['bot']} 가 비어 공용 봇으로 보냅니다.")
+        if not is_due(state, name, float(board.get("min_interval_min", 0))):
+            print(f"[{name}] 아직 확인할 때가 아닙니다. 건너뜁니다.")
+            continue
+
         try:
-            events, fresh = check_board(session, board, state.get(name, {}), FULL_SCAN)
+            if board.get("type") == "epic":
+                events, fresh = check_epic(session, board, state.get(name, {}))
+            else:
+                events, fresh = check_board(
+                    session, board, state.get(name, {}), FULL_SCAN
+                )
         except Exception as exc:  # noqa: BLE001
             # 이 게시판의 상태는 건드리지 않는다. 다음 실행에서 다시 본다.
             print(f"[{name}] 확인 실패: {exc}")
@@ -284,6 +356,7 @@ def main() -> int:
                 print(f"[{name}] 알림 실패 — 다음 실행에서 다시 알립니다: {record['title'][:40]}")
 
         state[name] = fresh
+        mark_checked(state, name)
         print(f"[{name}] 사건 {len(events)}건, 추적 {len(fresh)}건")
 
     save_state(state)

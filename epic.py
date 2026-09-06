@@ -31,10 +31,12 @@
 import os
 import re
 import secrets
+from urllib.parse import urljoin
 
 import requests
 
 LIST_TIMEOUT = 180   # 목록 조회가 아주 느리다(실측). 짧게 잡으면 매번 실패한다.
+LOGIN_TIMEOUT = 90   # 사람이 브라우저로 해도 15초쯤 걸린다(실측).
 LOGIN_URL = "https://epic.seoultech.ac.kr/common/user/login.do"
 ENC_URL = "https://epic.seoultech.ac.kr/common/user/encSo.do"
 
@@ -76,7 +78,7 @@ def _public_key(page: str) -> tuple[str, str]:
 
 def encrypt_credentials(session: requests.Session, user_id: str, password: str) -> dict:
     """아이디·비밀번호를 서버가 포털에 넘길 수 있는 형태로 바꿔 온다."""
-    page = session.get(LOGIN_URL, timeout=20).text
+    page = session.get(LOGIN_URL, timeout=LOGIN_TIMEOUT).text
     modulus, exponent = _public_key(page)
     resp = session.post(
         ENC_URL,
@@ -106,7 +108,55 @@ def _form_value(page: str, name: str) -> str:
     return m.group(1) if m else ""
 
 
-def login(session: requests.Session) -> None:
+def _inputs(form_html: str) -> dict:
+    """폼 안의 input 값을 모은다. name 과 value 의 순서가 뒤바뀐 칸도 있다."""
+    out = {}
+    for tag in re.findall(r"<input[^>]*>", form_html, re.I):
+        name = re.search("name=[\"']([^\"']+)", tag, re.I)
+        if not name:
+            continue
+        value = re.search("value=[\"']([^\"']*)", tag, re.I)
+        out[name.group(1)] = value.group(1) if value else ""
+    return out
+
+
+def follow_auto_submit(
+    session: requests.Session, resp, max_hops: int = 4, trace: list | None = None
+):
+    """응답이 '자동 제출 폼' 이면 그 폼을 대신 보낸다.
+
+    통합 로그인은 도메인을 넘나들 때 숨은 폼이 담긴 페이지를 돌려주고,
+    브라우저의 자바스크립트가 그걸 곧바로 다시 보내는 식으로 이어간다.
+    우리는 자바스크립트를 돌리지 않으므로 그 한 단계에서 멈춰 버린다.
+    폼을 찾아 그대로 보내 주면 브라우저와 같은 길을 간다.
+    """
+    for _ in range(max_hops):
+        if trace is not None:
+            trace.append(resp)
+        html = resp.text
+        # 자동 제출 페이지는 폼 하나만 있고 실려 나가자마자 스스로 보낸다.
+        # 이 표시가 없으면 그냥 도착한 화면이다. 로그인 뒤 홈 화면에도 검색창
+        # 같은 폼이 있어서, 이 검사가 없으면 홈을 몇 번씩 다시 부른다(실측).
+        if not re.search(r"\.submit\(\)|onload\s*=", html, re.I):
+            return resp
+        form = re.search(r"<form[^>]*>.*?</form>", html, re.S | re.I)
+        # 사람이 채우는 로그인 창에는 자동 제출이 없다. 눈에 보이는 입력칸이
+        # 있으면 여기서 멈춘다 — 아니면 빈 아이디로 로그인을 다시 시도하게 된다.
+        if not form or re.search("type=[\"']?(text|password)", form.group(0), re.I):
+            return resp
+        tag = re.search(r"<form[^>]*>", form.group(0), re.I).group(0)
+        action = re.search("action=[\"']([^\"']*)", tag, re.I)
+        target = urljoin(resp.url, action.group(1)) if action else resp.url
+        method = re.search("method=[\"']?(\\w+)", tag, re.I)
+        fields = _inputs(form.group(0))
+        if (method.group(1).lower() if method else "get") == "post":
+            resp = session.post(target, data=fields, timeout=LOGIN_TIMEOUT)
+        else:
+            resp = session.get(target, params=fields, timeout=LOGIN_TIMEOUT)
+    return resp
+
+
+def login(session: requests.Session, trace: list | None = None) -> None:
     """통합 계정으로 로그인해 세션에 쿠키를 심는다.
 
     보호된 페이지를 먼저 열어 로그인 화면으로 튕기게 한다. 그래야 그 화면에
@@ -139,7 +189,7 @@ def login(session: requests.Session) -> None:
             "encPp": rsa_encrypt_hex(password, modulus, exponent),
         },
         headers={"X-Requested-With": "XMLHttpRequest"},
-        timeout=20,
+        timeout=LOGIN_TIMEOUT,
     ).json()
     if not enc.get("enc"):
         raise RuntimeError("아이디·비밀번호 암호화 단계에서 거부당했습니다.")
@@ -152,9 +202,10 @@ def login(session: requests.Session) -> None:
             "returnUrl": return_url,
             "rtnUrl": rtn_url,
         },
-        timeout=20,
+        timeout=LOGIN_TIMEOUT,
     )
     resp.raise_for_status()
+    resp = follow_auto_submit(session, resp, trace=trace)
 
     # 로그인이 됐는지는 보호된 페이지가 열리는지로만 확인한다. 포털이 실패를
     # 200 과 함께 화면으로 알려주기 때문에 상태 코드로는 판별되지 않는다.
@@ -170,6 +221,79 @@ def login(session: requests.Session) -> None:
 def fetch_list(session: requests.Session) -> str:
     login(session)
     return session.get(LIST_URL, timeout=LIST_TIMEOUT).text
+
+
+
+# --- 목록 읽기 -------------------------------------------------------------
+
+# 프로그램 한 건은 detailBtn 링크에서 시작해 다음 detailBtn 직전까지다.
+# <li> 로 자르려 했더니 역량 표시가 <li> 로 또 들어 있어서 블록이 중간에
+# 끊겼다(실측). 여는 태그를 세는 대신 항목의 시작점으로 자른다.
+_SPLIT_RE = re.compile(r'(?=<a[^>]*class="detailBtn")')
+_ANCHOR_RE = re.compile(r'<a[^>]*class="detailBtn"[^>]*>(.*?)</a>', re.S)
+_SCORE_RE = re.compile(r'<span class="p_col">.*?</span>', re.S)
+_DL_RE = re.compile(r"<dt>\s*(.*?)\s*</dt>\s*<dd>(.*?)</dd>", re.S)
+_TARGET_RE = re.compile(r'<dl class="target">.*?<dd>(.*?)</dd>', re.S)
+_APPLIED_RE = re.compile(
+    r'<span class="current">\s*(\d+)\s*</span>\s*/\s*<span class="max">\s*(\d+)\s*</span>', re.S
+)
+
+
+def _text(fragment: str) -> str:
+    t = re.sub(r"<[^>]+>", " ", fragment)
+    return re.sub(r"\s+", " ", t.replace("&nbsp;", " ")).strip()
+
+
+def _target(block: str) -> str:
+    """신청대상. 학년·전공 칸이 따로라 '전체' 가 세 번 겹쳐 나온다(실측).
+
+    칸마다 <span> 이 하나씩이라 그 단위로 읽고 겹치는 것을 지운다. 통째로
+    글자만 뽑아 쉼표로 자르면 칸 사이가 쉼표일 때만 맞고 공백일 때는 틀린다.
+    """
+    dd = _TARGET_RE.search(block)
+    if not dd:
+        return ""
+    spans = [_text(s) for s in re.findall(r"<span[^>]*>(.*?)</span>", dd.group(1), re.S)]
+    return ", ".join(dict.fromkeys(s for s in spans if s))
+
+
+def parse_list(page: str) -> list[dict]:
+    """비교과 프로그램 목록을 읽는다.
+
+    프로그램을 제목으로 구분한다. 목록에 있는 encSddpbSeq 는 이름 그대로
+    암호화된 값이라 세션마다 달라질 수 있다. 그걸 열쇠로 삼았다가 값이
+    바뀌면 매 실행이 '전부 새 프로그램' 이 되어 알림이 쏟아진다. 제목은
+    그런 위험이 없다. 제목을 고치면 새 프로그램으로 보이지만, 이쪽은
+    수정을 볼 필요가 없으니(요청) 그 편이 안전한 쪽으로 틀린다.
+    """
+    items = []
+    for block in _SPLIT_RE.split(page):
+        anchor = _ANCHOR_RE.search(block)
+        if not anchor:
+            continue
+        # 제목 앞에 붙는 [70점] 같은 점수 표시는 떼어낸다.
+        title = _text(_SCORE_RE.sub(" ", anchor.group(1)))
+        if not title:
+            continue
+
+        # 항목마다 같은 이름표가 한 번씩만 나온다. 마지막 항목 뒤에는 페이지
+        # 아래쪽이 딸려 오므로 먼저 나온 값을 쓴다.
+        fields: dict[str, str] = {}
+        for key, value in _DL_RE.findall(block):
+            fields.setdefault(_text(key), _text(value))
+
+        applied = _APPLIED_RE.search(block)
+        items.append({
+            "title": title,
+            "org": fields.get("운영조직", ""),
+            "apply_period": fields.get("신청기간", ""),
+            "target": _target(block) or fields.get("신청대상", ""),
+            # 신청 인원은 사람이 신청할 때마다 바뀐다. 알림에 같이 보여주면
+            # 자리가 얼마나 남았는지 바로 안다. 다만 같고 다름을 가리는 데는
+            # 쓰지 않는다 — 쓰면 한 명 신청할 때마다 '바뀐 프로그램' 이 된다.
+            "applied": f"{applied.group(1)}/{applied.group(2)}명" if applied else "",
+        })
+    return items
 
 
 if __name__ == "__main__":
