@@ -175,7 +175,7 @@ def test_min_interval():
 
     state = {}
     assert watch.is_due(state, "에픽", 120), "기록이 없으면 확인해야 한다"
-    watch.mark_checked(state, "에픽")
+    watch.mark_checked(state, "에픽", 120)
     assert not watch.is_due(state, "에픽", 120), "방금 봤으면 건너뛴다"
     assert watch.is_due(state, "에픽", 0), "간격 0 이면 항상 확인한다"
     assert watch.is_due(state, "다른게시판", 120), "게시판마다 따로 센다"
@@ -183,6 +183,11 @@ def test_min_interval():
     # 시간이 지나면 다시 확인한다.
     state[watch.CHECKED_KEY]["에픽"] = time.time() - 121 * 60
     assert watch.is_due(state, "에픽", 120)
+
+    # 간격 제한이 없는 게시판은 시각을 남기지 않는다. 남기면 그 값이 매 실행
+    # 바뀌어, 공지가 하나도 안 바뀐 날에도 state.json 커밋이 생긴다.
+    watch.mark_checked(state, "대학공지", 0)
+    assert "대학공지" not in state[watch.CHECKED_KEY], state[watch.CHECKED_KEY]
 
 
 def test_epic_parse_list():

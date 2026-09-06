@@ -146,8 +146,17 @@ def is_due(state: dict, name: str, min_interval_min: float) -> bool:
     return (time.time() - float(last)) >= min_interval_min * 60
 
 
-def mark_checked(state: dict, name: str) -> None:
-    state.setdefault(CHECKED_KEY, {})[name] = time.time()
+def mark_checked(state: dict, name: str, min_interval_min: float) -> None:
+    """확인 시각은 간격 제한을 두는 게시판만 기록한다.
+
+    모든 게시판에 남기면 시각이 매 실행 바뀌어 state.json 이 늘 달라진다.
+    그러면 공지가 하나도 안 바뀐 날에도 실행마다 커밋이 생긴다. 하루 백 번
+    도는 프로그램이라 그 커밋만 한 해 수만 건이 된다.
+    """
+    if min_interval_min > 0:
+        state.setdefault(CHECKED_KEY, {})[name] = time.time()
+    else:
+        state.get(CHECKED_KEY, {}).pop(name, None)
 
 
 def check_epic(session: requests.Session, board: dict, seen: dict) -> tuple[list, dict]:
@@ -329,7 +338,8 @@ def main() -> int:
             app_key = os.getenv("KAKAOWORK_APP_KEY", "")
             if board.get("bot"):
                 print(f"[{name}] {board['bot']} 가 비어 공용 봇으로 보냅니다.")
-        if not is_due(state, name, float(board.get("min_interval_min", 0))):
+        interval = float(board.get("min_interval_min", 0))
+        if not is_due(state, name, interval):
             print(f"[{name}] 아직 확인할 때가 아닙니다. 건너뜁니다.")
             continue
 
@@ -356,7 +366,7 @@ def main() -> int:
                 print(f"[{name}] 알림 실패 — 다음 실행에서 다시 알립니다: {record['title'][:40]}")
 
         state[name] = fresh
-        mark_checked(state, name)
+        mark_checked(state, name, interval)
         print(f"[{name}] 사건 {len(events)}건, 추적 {len(fresh)}건")
 
     save_state(state)
