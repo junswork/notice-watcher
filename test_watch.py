@@ -122,6 +122,53 @@ def test_check_board_flow():
         watch.fetch = real_fetch
 
 
+def test_new_mode_skips_known_posts():
+    """새 글만 보는 모드: 이미 아는 글은 상세를 열지 않고, 새 글은 잡는다."""
+    pages, opened = {}, []
+    real_fetch = watch.fetch
+
+    def fake_fetch(session, url):
+        opened.append(url)
+        return pages[url]
+
+    watch.fetch = fake_fetch
+    watch.REQUEST_DELAY = 0
+    try:
+        board = {"name": "테스트", "url": "https://x.ac.kr/b/"}
+        u1 = "https://x.ac.kr/b/?do=commonview&nowpage=1&bnum=4691&bidx=111&cate=10"
+        u2 = "https://x.ac.kr/b/?do=commonview&bnum=4691&bidx=222&cate=10"
+        pages["https://x.ac.kr/b/"] = LIST
+        pages[u1] = page(title="글 하나")
+        pages[u2] = page(title="글 둘")
+        _, state = watch.check_board(None, board, {}, full=True)
+
+        # 본문이 바뀌어도 새 글만 보는 모드는 상세를 열지 않으므로 모른다.
+        pages[u1] = page(title="글 하나", body="몰래 고친 본문")
+        opened.clear()
+        events, _ = watch.check_board(None, board, state, full=False)
+        assert events == [], events
+        assert opened == ["https://x.ac.kr/b/"], f"목록 외에 더 열었다: {opened}"
+
+        # 같은 모드에서도 처음 보는 글은 상세를 열어 알린다.
+        pages["https://x.ac.kr/b/"] = LIST.replace(
+            '<tr><td><a href="?do=list&bnum=4691">목록</a></td></tr>',
+            '<tr class="body_tr"><td><a href="?do=commonview&bnum=4691&bidx=333">다</a></td></tr>',
+        )
+        u3 = "https://x.ac.kr/b/?do=commonview&bnum=4691&bidx=333"
+        pages[u3] = page(title="새 글")
+        opened.clear()
+        events, _ = watch.check_board(None, board, state, full=False)
+        assert len(events) == 1 and events[0][1] == "새 글", events
+        assert opened == ["https://x.ac.kr/b/", u3], f"연 페이지: {opened}"
+
+        # full 로 돌면 아까 몰래 고친 본문이 그제야 잡힌다.
+        events, _ = watch.check_board(None, board, state, full=True)
+        kinds = sorted(e[1] for e in events)
+        assert kinds == ["새 글", "수정됨"], events
+    finally:
+        watch.fetch = real_fetch
+
+
 def test_live():
     import json, requests
 

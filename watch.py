@@ -42,6 +42,11 @@ BOARDS_FILE = os.getenv("BOARDS_FILE", "boards.json")
 # 목록 확인(신규 감지)과 본문 확인(수정 감지)의 주기를 분리하라.
 DETAIL_LIMIT = int(os.getenv("DETAIL_LIMIT", "25"))
 REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.3"))
+# "new"  = 새 글만 본다. 목록 한 번 받고, 처음 보는 글의 상세만 연다.
+#          평소엔 접속이 게시판당 한 번으로 끝나 자주 돌려도 부담이 없다.
+# "full" = 목록에 걸린 글의 상세를 전부 다시 읽어 본문이 바뀌었는지 본다.
+#          게시판당 접속이 스물몇 번이라 하루 몇 번만 돌린다.
+FULL_SCAN = os.getenv("WATCH_MODE", "full").lower() == "full"
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -144,7 +149,9 @@ def fetch(session: requests.Session, url: str) -> str:
     return resp.text
 
 
-def check_board(session: requests.Session, board: dict, seen: dict) -> tuple[list, dict]:
+def check_board(
+    session: requests.Session, board: dict, seen: dict, full: bool = True
+) -> tuple[list, dict]:
     """게시판 하나를 확인한다. (알릴 사건 목록, 최신 상태) 를 돌려준다.
 
     사건은 (게시물id, 종류, 기록, 바뀐내용) 이다.
@@ -165,7 +172,13 @@ def check_board(session: requests.Session, board: dict, seen: dict) -> tuple[lis
     # 목록에 올라올 때 '새 글' 로 잘못 알린다.
     fresh = dict(seen)
 
-    for bidx, url in posts[:DETAIL_LIMIT]:
+    on_page = posts[:DETAIL_LIMIT]
+    # 새 글만 볼 때는 처음 보는 번호의 상세만 연다. 새 글은 하루 몇 건이라
+    # 평소에는 여는 페이지가 없다. 이미 아는 글은 본문이 그대로일 것으로
+    # 보고 넘어간다 — 그 확인은 full 로 도는 실행이 맡는다.
+    targets = on_page if full else [(b, u) for b, u in on_page if b not in seen]
+
+    for bidx, url in targets:
         try:
             detail = parse_detail(fetch(session, url))
         except Exception as exc:  # noqa: BLE001
@@ -210,7 +223,7 @@ def check_board(session: requests.Session, board: dict, seen: dict) -> tuple[lis
     # 확인 범위를 벗어난 옛 글은 본문을 버린다. 비교할 일이 없는 본문을 계속
     # 들고 있으면 state.json 이 실행마다 불어난다. 해시는 남기므로 그 글이
     # 다시 목록에 올라와도 수정 여부는 그대로 알아낸다.
-    checked = {bidx for bidx, _ in posts[:DETAIL_LIMIT]}
+    checked = {bidx for bidx, _ in on_page}
     for bidx, rec in fresh.items():
         if bidx not in checked:
             rec.pop("body", None)
@@ -236,6 +249,7 @@ def main() -> int:
         return 1
 
     state = load_json(STATE_FILE, {})
+    print("확인 범위:", "새 글 + 수정" if FULL_SCAN else "새 글만")
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
 
@@ -253,7 +267,7 @@ def main() -> int:
             if board.get("bot"):
                 print(f"[{name}] {board['bot']} 가 비어 공용 봇으로 보냅니다.")
         try:
-            events, fresh = check_board(session, board, state.get(name, {}))
+            events, fresh = check_board(session, board, state.get(name, {}), FULL_SCAN)
         except Exception as exc:  # noqa: BLE001
             # 이 게시판의 상태는 건드리지 않는다. 다음 실행에서 다시 본다.
             print(f"[{name}] 확인 실패: {exc}")
