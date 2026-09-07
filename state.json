@@ -1,6 +1,6 @@
 {
  "__checked__": {
-  "에픽폴리오 비교과": 1788783343.5755618
+  "에픽폴리오 비교과": 1788800070.8311908
  },
  "대학공지사항": {
   "893540": {
@@ -280,6 +280,22 @@
    "title": "[채용설명회] 키사이트테크놀로지스코리아 채용설명회 (9월 11일)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
+  "7c17ff102eaea47c": {
+   "applied": "29/70명",
+   "date": "2026.08.07 14:00 ~ 2026.09.11 18:00",
+   "org": "취업진로본부",
+   "target": "전체",
+   "title": "2026학년도 자기주도형 취업준비 프로그램(취업의 발견)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "89e6147789734729": {
+   "applied": "17/100명",
+   "date": "2026.08.31 00:00 ~ 2026.09.10 16:00",
+   "org": "건설시스템공학과",
+   "target": "공과대학, 건설시스템공학과, 전체",
+   "title": "2026년 건설시스템공학과 직무특강",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
   "b365f78996b85505": {
    "applied": "2/70명",
    "date": "2026.09.01 00:00 ~ 2026.09.10 15:00",
@@ -334,6 +350,14 @@
    "org": "취업진로본부",
    "target": "전체",
    "title": "[채용설명회] 어플라이드머티어리얼즈코리아 채용설명회 (9월 9일)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "ff482d042f5057f2": {
+   "applied": "92/250명",
+   "date": "2026.08.26 00:00 ~ 2026.12.18 18:00",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026학년도 2차 ST 스위치온(T) 학습전략검사",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   }
  },
