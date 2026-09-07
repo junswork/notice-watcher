@@ -199,22 +199,88 @@ def test_excerpt():
 
 
 def test_new_post_message_has_body():
-    """새 글 알림에 본문이 들어가고, 제목은 '내용' 으로 붙는다."""
-    msg = watch.format_message(
-        "새 글", "대학공지사항",
-        {"title": "장학금 신청", "date": "2026-09-08", "url": "https://x/1"},
-        "9월 20일까지 신청",
-    )
-    assert "[새 공지]" in msg and "-- 내용 --" in msg, msg
-    assert "9월 20일까지 신청" in msg and "https://x/1" in msg
-    assert "바뀐 내용" not in msg
+    """새 글 알림에 본문이 들어가고, 새 글과 수정이 다르게 표시된다."""
+    rec = {"title": "장학금 신청", "date": "2026-09-08", "url": "https://x/1", "body": ""}
+    real = watch.load_keywords
+    watch.load_keywords = lambda: ([], [])
+    try:
+        # 푸시 한 줄에는 게시판과 제목이 들어간다.
+        line = watch.format_message("새 글", "대학공지사항", rec, "9월 20일까지 신청")
+        assert "[새 공지]" in line and "대학공지사항" in line and "장학금 신청" in line, line
 
-    fixed = watch.format_message(
-        "수정됨", "대학공지사항",
-        {"title": "장학금 신청", "date": "2026-09-08", "url": "https://x/1"},
-        "삭제: 9월 20일",
-    )
-    assert "[공지 수정]" in fixed and "-- 바뀐 내용 --" in fixed, fixed
+        blocks = watch.format_blocks("새 글", "대학공지사항", rec, "9월 20일까지 신청")
+        body = next(b for b in blocks if b.get("term") == "내용")
+        assert body["content"]["text"] == "9월 20일까지 신청"
+        assert not any(b.get("term") == "바뀐 내용" for b in blocks)
+
+        fixed = watch.format_blocks("수정됨", "대학공지사항", rec, "삭제: 9월 20일")
+        assert fixed[0]["text"] == "공지 수정", fixed[0]
+        assert any(b.get("term") == "바뀐 내용" for b in fixed)
+        assert "[공지 수정]" in watch.format_message("수정됨", "대학공지사항", rec, "")
+    finally:
+        watch.load_keywords = real
+
+
+def test_keyword_match_and_highlight():
+    """놓치기 싫은 말이 걸리면 찾아내고, 그 부분만 빨갛게 칠한다."""
+    real = watch.load_keywords
+    watch.load_keywords = lambda: (["반도체", "실습"], ["교육"])
+    try:
+        assert watch.matched_keywords("반도체 8대 공정 체험") == ["반도체"]
+        assert watch.matched_keywords("현장실습 신청 안내") == ["실습"]
+        assert watch.matched_keywords("장학금 신청") == []
+        # 제목에 없어도 본문에 있으면 잡는다.
+        assert watch.matched_keywords("특강 안내", "반도체 공정 실습 포함") == ["반도체", "실습"]
+        # 자간을 벌려 쓴 제목도 잡는다.
+        assert watch.matched_keywords("반 도 체 특강") == ["반도체"]
+
+        # '제목만' 으로 지정한 말은 제목에 있을 때만 센다. 본문은 안 본다 —
+        # '교육' 은 대학 공지 본문에 거의 다 나와서 강조가 의미를 잃는다.
+        assert watch.matched_keywords("장비교육 안내") == ["교육"]
+        assert watch.matched_keywords("TOEIC 접수", "교육 과정 안내입니다") == []
+
+        parts = watch.highlight("반도체 특강", ["반도체"])
+        assert "".join(p["text"] for p in parts) == "반도체 특강", parts
+        red = [p for p in parts if p.get("color") == "red"]
+        assert len(red) == 1 and red[0]["text"] == "반도체", parts
+
+        # 긴 키워드를 먼저 잘라야 '교육' 이 '교육혁신원' 을 쪼개지 않는다.
+        parts = watch.highlight("교육혁신원 안내", ["교육"])
+        assert "".join(p["text"] for p in parts) == "교육혁신원 안내"
+
+        # 키워드가 없으면 통째로 한 조각이다.
+        assert watch.highlight("아무거나", []) == [{"type": "styled", "text": "아무거나"}]
+    finally:
+        watch.load_keywords = real
+
+
+def test_blocks_shape():
+    """카카오워크가 받아들이는 모양이어야 한다. text 는 항상 함께 보낸다."""
+    real = watch.load_keywords
+    watch.load_keywords = lambda: (["반도체"], [])
+    try:
+        rec = {"title": "반도체 공정 교육", "date": "2026-09-08",
+               "url": "https://x/1", "body": "본문"}
+        blocks = watch.format_blocks("새 글", "대학공지사항", rec, "3줄 요약")
+        assert blocks[0] == {"type": "header", "text": "관심 공지", "style": "red"}
+        assert blocks[0]["text"] and len(blocks[0]["text"]) <= 20   # header 20자 제한
+        btn = blocks[-1]
+        assert btn["type"] == "button"
+        assert btn["action"]["type"] == "open_system_browser"
+        assert btn["action"]["value"] == "https://x/1"
+        # inlines 를 이어 붙이면 text 와 같아야 한다.
+        title = next(b for b in blocks if b["type"] == "text")
+        assert "".join(i["text"] for i in title["inlines"]) == title["text"]
+        # 푸시 한 줄에도 게시판과 제목이 들어간다.
+        line = watch.format_message("새 글", "대학공지사항", rec, "")
+        assert "대학공지사항" in line and "반도체 공정 교육" in line and "관심" in line
+
+        # 키워드가 안 걸리면 파란 머리.
+        plain = {"title": "장학금 안내", "date": "2026-09-08", "url": "https://x/2", "body": ""}
+        assert watch.format_blocks("새 글", "학사공지", plain, "")[0]["style"] == "blue"
+        assert watch.format_blocks("수정됨", "학사공지", plain, "")[0]["style"] == "yellow"
+    finally:
+        watch.load_keywords = real
 
 
 def test_holiday_skip():
@@ -238,14 +304,25 @@ def test_heartbeat_message():
     state = {"대학공지사항": {"1": {}, "2": {}}, "에픽": {"a": {}}}
     boards = [{"name": "대학공지사항"}, {"name": "에픽"}]
 
-    msg = watch.heartbeat_message(state, boards, {})
-    assert "정상 작동 중" in msg
-    assert "대학공지사항 2건 추적" in msg and "에픽 1건 추적" in msg, msg
-    assert "실패" not in msg
+    # 푸시 한 줄
+    assert "정상 감시 중" in watch.heartbeat_message(state, boards, {})
+    bad_line = watch.heartbeat_message(state, boards, {"에픽": {"count": 4, "notified": 0}})
+    assert "감시 이상" in bad_line, bad_line
 
-    # 실패 중인 게시판이 있으면 생존 신호에 같이 적는다.
-    bad = watch.heartbeat_message(state, boards, {"에픽": {"count": 4, "notified": 0}})
-    assert "연속 4회 실패 중" in bad, bad
+    # 말풍선
+    blocks = watch.heartbeat_blocks(state, boards, {})
+    assert blocks[0]["style"] == "blue" and len(blocks[0]["text"]) <= 20
+    terms = {b["term"]: b["content"]["text"] for b in blocks if b["type"] == "description"}
+    assert terms == {"대학공지사항": "2건 추적 중", "에픽": "1건 추적 중"}, terms
+    assert not any(b["type"] == "button" for b in blocks), "정상일 땐 버튼이 없다"
+
+    # 실패 중인 게시판이 있으면 빨간 머리 + 실행 기록 버튼
+    bad = watch.heartbeat_blocks(state, boards, {"에픽": {"count": 4, "notified": 0}})
+    assert bad[0]["style"] == "red"
+    hit = next(b for b in bad if b.get("term") == "에픽")
+    assert "연속 4회 실패 중" in hit["content"]["text"]
+    assert hit["content"]["inlines"][0]["color"] == "red"
+    assert any(b["type"] == "button" for b in bad), "실패 시엔 버튼이 있어야 한다"
 
 
 def test_epic_parse_list():

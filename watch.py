@@ -37,6 +37,12 @@ import notify
 
 STATE_FILE = os.getenv("STATE_FILE", "state.json")
 BOARDS_FILE = os.getenv("BOARDS_FILE", "boards.json")
+KEYWORDS_FILE = os.getenv("KEYWORDS_FILE", "관심키워드.json")
+# 실패 알림에서 바로 열 수 있게. 깃허브가 실행 중이면 저장소 이름을 알려준다.
+ACTIONS_URL = (
+    f"https://github.com/{os.getenv('GITHUB_REPOSITORY', 'junswork/notice-watcher')}"
+    "/actions"
+)
 # 한 게시판에서 몇 개까지 상세 페이지를 확인할지. 목록 1페이지가 20~21건이고
 # 맨 위 6~8건은 고정공지가 차지한다(실측). 25 면 고정공지가 몇 개든 1페이지를
 # 통째로 덮으므로 감시가 반나절 멈췄다 재개돼도 그 사이 글을 놓치지 않는다.
@@ -335,24 +341,102 @@ def is_korean_holiday(now_utc: float | None = None) -> bool:
 
 
 def heartbeat_message(state: dict, boards: list, failures: dict) -> str:
-    """살아 있다는 신호. 조용한 것이 '공지가 없어서' 인지 '멈춰서' 인지 가른다."""
+    """푸시에 뜰 한 줄. 조용한 것이 '공지가 없어서' 인지 '멈춰서' 인지 가른다."""
+    if failures:
+        return f"[감시 이상] {len(failures)}곳이 실패 중입니다"
+    return f"[생존 신호] 게시판 {len(boards)}곳 정상 감시 중"
+
+
+def heartbeat_blocks(state: dict, boards: list, failures: dict) -> list:
     kst = datetime.datetime.fromtimestamp(
         time.time(), datetime.timezone.utc
     ) + datetime.timedelta(hours=9)
     요일 = "월화수목금토일"[kst.weekday()]
-    lines = [
-        "[생존 신호] 공지사항 알림이 정상 작동 중",
-        f"{kst:%Y-%m-%d} ({요일}) {kst:%H:%M}",
-        "",
+
+    blocks = [
+        {
+            "type": "header",
+            "text": "감시 이상" if failures else "정상 감시 중",
+            "style": "red" if failures else "blue",
+        },
+        {"type": "text", "text": f"{kst:%Y-%m-%d} ({요일}) {kst:%H:%M}"},
     ]
     for board in boards:
         name = board["name"]
-        tracked = len(state.get(name, {}))
-        mark = "" if name not in failures else f"  ← 연속 {failures[name]['count']}회 실패 중"
-        lines.append(f"{name} {tracked}건 추적{mark}")
+        count = len(state.get(name, {}))
+        if name in failures:
+            content = {
+                "type": "text",
+                "text": f"연속 {failures[name]['count']}회 실패 중",
+                "inlines": [{
+                    "type": "styled",
+                    "text": f"연속 {failures[name]['count']}회 실패 중",
+                    "bold": True, "color": "red",
+                }],
+            }
+        else:
+            content = {"type": "text", "text": f"{count}건 추적 중"}
+        blocks.append(
+            {"type": "description", "term": name, "accent": True, "content": content}
+        )
     if failures:
-        lines += ["", "실패한 게시판이 있습니다. Actions 탭의 실행 기록을 보세요."]
-    return "\n".join(lines)
+        blocks.append({
+            "type": "button", "text": "실행 기록 보기", "style": "primary",
+            "action": {"type": "open_system_browser", "name": "actions",
+                       "value": ACTIONS_URL},
+        })
+    return blocks
+
+
+def load_keywords() -> tuple[list[str], list[str]]:
+    """(어디서든 찾을 말, 제목에서만 찾을 말).
+
+    '교육' 처럼 흔한 말은 본문까지 뒤지면 다섯 건 중 한 건이 걸려 강조가
+    의미를 잃는다(실측). 그런 말은 제목에 있을 때만 센다.
+    """
+    data = load_json(KEYWORDS_FILE, {})
+    anywhere = [k for k in data.get("강조", []) if k.strip()]
+    title_only = [k for k in data.get("제목만", []) if k.strip()]
+    return anywhere, title_only
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"\s+", "", text).lower()
+
+
+def matched_keywords(title: str, body: str = "") -> list[str]:
+    """어느 키워드가 걸렸는지.
+
+    띄어쓰기를 무시하고 찾는다 — 공지 제목에는 '반 도 체' 처럼 자간을 벌려
+    쓴 것이 종종 있다.
+    """
+    anywhere, title_only = load_keywords()
+    in_title = _squash(title)
+    in_all = _squash(title + " " + body)
+    hits = [w for w in anywhere if _squash(w) in in_all]
+    hits += [w for w in title_only if _squash(w) in in_title and w not in hits]
+    return hits
+
+
+def highlight(text: str, keywords: list[str]) -> list[dict]:
+    """걸린 말만 굵은 빨강으로 칠한 조각들을 만든다.
+
+    카카오워크는 text 와 inlines 를 함께 받는다. inlines 조각을 이어 붙이면
+    text 와 같아야 하므로 원문을 자를 때 순서를 지킨다.
+    """
+    if not keywords:
+        return [{"type": "styled", "text": text}]
+    # 긴 것부터 찾아야 '교육' 이 '교육혁신원' 을 먼저 자르지 않는다.
+    pattern = "(" + "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True)) + ")"
+    out = []
+    for part in re.split(pattern, text):
+        if not part:
+            continue
+        if any(part == k for k in keywords):
+            out.append({"type": "styled", "text": part, "bold": True, "color": "red"})
+        else:
+            out.append({"type": "styled", "text": part})
+    return out
 
 
 def excerpt(body: str, max_lines: int = 3, max_chars: int = 220) -> str:
@@ -367,13 +451,61 @@ def excerpt(body: str, max_lines: int = 3, max_chars: int = 220) -> str:
 
 
 def format_message(kind: str, board_name: str, record: dict, detail: str) -> str:
+    """푸시 알림과 대화방 목록에 뜨는 한 줄짜리 요약.
+
+    폰 잠금화면에서는 이것만 보이므로 게시판과 제목이 앞에 와야 한다.
+    """
     head = "[새 공지]" if kind == "새 글" else "[공지 수정]"
-    label = "-- 내용 --" if kind == "새 글" else "-- 바뀐 내용 --"
-    lines = [f"{head} {board_name}", "", record["title"], f"작성일 {record['date']}"]
+    if matched_keywords(record["title"], record.get("body", "")):
+        head = "[관심 공지]" if kind == "새 글" else "[관심 공지 수정]"
+    return f"{head} {board_name} — {record['title']}"
+
+
+def format_blocks(kind: str, board_name: str, record: dict, detail: str) -> list:
+    """말풍선 본문. 제목과 본문을 나누고 걸린 키워드를 빨갛게 칠한다."""
+    hits = matched_keywords(record["title"], record.get("body", ""))
+    if hits:
+        header = {"type": "header", "text": "관심 공지", "style": "red"}
+    elif kind == "새 글":
+        header = {"type": "header", "text": "새 공지", "style": "blue"}
+    else:
+        header = {"type": "header", "text": "공지 수정", "style": "yellow"}
+
+    blocks = [
+        header,
+        {
+            "type": "text",
+            "text": record["title"],
+            "inlines": highlight(record["title"], hits),
+        },
+        {
+            "type": "description",
+            "term": board_name,
+            "accent": True,
+            "content": {"type": "text", "text": record["date"]},
+        },
+    ]
+    if hits:
+        blocks.append({
+            "type": "description",
+            "term": "걸린 말",
+            "accent": True,
+            "content": {"type": "text", "text": ", ".join(hits)},
+        })
     if detail:
-        lines += ["", label, detail]
-    lines += ["", record["url"]]
-    return "\n".join(lines)
+        blocks.append({
+            "type": "description",
+            "term": "내용" if kind == "새 글" else "바뀐 내용",
+            "accent": True,
+            "content": {"type": "text", "text": detail[:1500]},
+        })
+    blocks.append({
+        "type": "button",
+        "text": "공지 열기",
+        "style": "primary",
+        "action": {"type": "open_system_browser", "name": "open", "value": record["url"]},
+    })
+    return blocks
 
 
 def main() -> int:
@@ -424,16 +556,20 @@ def main() -> int:
             record["count"] += 1
             due = time.time() - record["notified"] >= FAILURE_REPEAT_HOURS * 3600
             if record["count"] >= FAILURE_THRESHOLD and due:
-                warning = "\n".join([
-                    f"[감시 실패] {name}",
-                    "",
-                    f"연속 {record['count']}회 확인하지 못했습니다.",
-                    f"마지막 오류: {str(exc)[:300]}",
-                    "",
-                    "이 게시판의 새 공지를 놓치고 있는 중입니다.",
-                    "깃허브 저장소 Actions 탭에서 실행 기록을 확인하세요.",
-                ])
-                if notify.send(warning, app_key):
+                blocks = [
+                    {"type": "header", "text": "감시 실패", "style": "red"},
+                    {"type": "text", "text": f"{name} 을(를) 확인하지 못하고 있습니다."},
+                    {"type": "description", "term": "연속 실패", "accent": True,
+                     "content": {"type": "text", "text": f"{record['count']}회"}},
+                    {"type": "description", "term": "마지막 오류", "accent": True,
+                     "content": {"type": "text", "text": str(exc)[:300]}},
+                    {"type": "text", "text": "이 게시판의 새 공지를 지금 놓치고 있습니다."},
+                    {"type": "button", "text": "실행 기록 보기", "style": "primary",
+                     "action": {"type": "open_system_browser", "name": "actions",
+                                "value": ACTIONS_URL}},
+                ]
+                warning = f"[감시 실패] {name} — 연속 {record['count']}회 확인 못 함"
+                if notify.send(warning, app_key, blocks):
                     record["notified"] = time.time()
             failures[name] = record
             continue
@@ -443,7 +579,11 @@ def main() -> int:
         # 알림을 먼저 보내고, 보내는 데 성공한 것만 상태에 남긴다. 순서를
         # 뒤집으면 전송이 실패했을 때 그 공지는 영영 다시 알려주지 않는다.
         for bidx, kind, record, detail in events:
-            if notify.send(format_message(kind, name, record, detail), app_key):
+            if notify.send(
+                format_message(kind, name, record, detail),
+                app_key,
+                format_blocks(kind, name, record, detail),
+            ):
                 fresh[bidx] = record
             else:
                 failed = True
@@ -466,7 +606,12 @@ def main() -> int:
                 (os.getenv(b.get("bot", ""), "") for b in boards if os.getenv(b.get("bot", ""), "")),
                 os.getenv("KAKAOWORK_APP_KEY", ""),
             )
-            if not notify.send(heartbeat_message(state, boards, failures), key):
+            ok = notify.send(
+                heartbeat_message(state, boards, failures),
+                key,
+                heartbeat_blocks(state, boards, failures),
+            )
+            if not ok:
                 failed = True
 
     save_state(state)

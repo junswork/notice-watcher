@@ -63,7 +63,12 @@ def _kakaowork_conversation(app_key: str, want_email: str) -> str:
     return conv_id
 
 
-def send_kakaowork(message: str, app_key: str = "") -> bool:
+def send_kakaowork(message: str, app_key: str = "", blocks: list | None = None) -> bool:
+    """blocks 를 주면 서식 있는 말풍선으로, 안 주면 그냥 글자로 보낸다.
+
+    blocks 를 보낼 때도 text 는 반드시 같이 보낸다. 카카오워크는 그 값을
+    푸시 알림과 대화방 목록에 쓴다 — 빼면 폰 잠금화면에 아무것도 안 뜬다.
+    """
     app_key = app_key or os.getenv("KAKAOWORK_APP_KEY", "")
     if not app_key:
         return False
@@ -72,6 +77,8 @@ def send_kakaowork(message: str, app_key: str = "") -> bool:
         if not conv_id:
             return False
         body = {"conversation_id": conv_id, "text": message[:4000]}
+        if blocks:
+            body["blocks"] = blocks
         headers = {"Authorization": f"Bearer {app_key}"}
         for attempt in range(2):
             resp = requests.post(
@@ -85,9 +92,14 @@ def send_kakaowork(message: str, app_key: str = "") -> bool:
                 continue
             ok = bool((resp.json() or {}).get("success", False))
             if not ok:
+                print(f"[알림] 카카오워크 전송 거부: {resp.text[:200]}")
+                if blocks:
+                    # 서식이 거부되면 글자만이라도 보낸다. 보기 좋으라고 넣은
+                    # 것 때문에 공지를 통째로 놓치면 본말이 전도된다.
+                    print("[알림] 서식 없이 다시 보냅니다.")
+                    return send_kakaowork(message, app_key, None)
                 # 대화방이 닫혔을 수 있다. 캐시를 버려 다음 건에서 다시 연다.
                 _conv_cache.pop(app_key, None)
-                print(f"[알림] 카카오워크 전송 거부: {resp.text[:200]}")
             return ok
         return False
     except Exception as exc:  # noqa: BLE001
@@ -95,15 +107,35 @@ def send_kakaowork(message: str, app_key: str = "") -> bool:
         return False
 
 
-def send(message: str, app_key: str = "") -> bool:
+def send(
+    message: str, app_key: str = "", blocks: list | None = None, test: bool = False
+) -> bool:
     """보냈으면 True. app_key 를 주면 그 봇으로, 안 주면 공용 봇으로 보낸다.
+
+    test 를 주면 눈에 띄게 표시한다. 표시가 없으면 받는 사람이 진짜 알림과
+    구별할 수 없다 — 새벽에 '감시 실패' 시험 메시지를 받고 놀란 적이 있다.
 
     앱키가 없으면 False 다. 알림 없이 상태만 저장되어 공지를 통째로
     놓치는 상황을 막기 위해 성공으로 치지 않는다.
     """
+    if test:
+        message = "[테스트] " + message
+        note = {"type": "text", "text": "※ 테스트입니다. 실제 상황이 아닙니다."}
+        if blocks and blocks[0].get("type") == "header":
+            # 머리 블록은 맨 위에 하나만 올 수 있다. 하나 더 붙이면 말풍선
+            # 전체가 거부된다(실측). 있는 것을 고쳐 쓴다. 글자 수 상한은 20자.
+            head = dict(blocks[0])
+            head["text"] = ("[테스트] " + head.get("text", ""))[:20]
+            head["style"] = "yellow"
+            blocks = [head, note] + blocks[1:]
+        else:
+            blocks = [
+                {"type": "header", "text": "테스트", "style": "yellow"},
+                note,
+            ] + (blocks or [])
     print("-" * 60)
     print(message)
-    ok = send_kakaowork(message, app_key)
+    ok = send_kakaowork(message, app_key, blocks)
     if not ok:
         print("[알림] 보내지 못했습니다.")
     return ok
