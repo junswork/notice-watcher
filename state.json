@@ -1,6 +1,6 @@
 {
  "__checked__": {
-  "에픽폴리오 비교과": 1789049773.0049634
+  "에픽폴리오 비교과": 1789060874.883766
  },
  "대학공지사항": {
   "893540": {
@@ -354,12 +354,28 @@
    "title": "[학과맞춤형 취업지원프로그램]2026년 제1차 기계공학 분야 진로·직무 이해 특강(기계공학과)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
+  "5c5a24cdc9f3c4e2": {
+   "applied": "43/510명",
+   "date": "2026.05.18 00:00 ~ 2026.12.19 00:00",
+   "org": "식품생명공학과",
+   "target": "전체",
+   "title": "2026년 나의 진로는 어디로? 식품생명공학분야 직업 인터뷰",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
   "6af9bb40357d2f02": {
    "applied": "4/70명",
    "date": "2026.09.01 00:00 ~ 2026.09.10 15:00",
    "org": "취업진로본부",
    "target": "전체",
    "title": "[채용설명회] 키사이트테크놀로지스코리아 채용설명회 (9월 11일)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "745e51e7ca36e333": {
+   "applied": "167/300명",
+   "date": "2026.03.18 00:00 ~ 2026.12.31 18:00",
+   "org": "학생상담센터",
+   "target": "1학년",
+   "title": "2026학년도 맞춤형 온라인 심리검사 신입생 대상 IESS 통합 스트레스검사",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
   "7c17ff102eaea47c": {
@@ -392,6 +408,14 @@
    "org": "취업진로본부",
    "target": "전체",
    "title": "[채용설명회] 엠피더블유코리아 채용설명회 (9월 11일)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "c26a4ac5fbfc1477": {
+   "applied": "2/20명",
+   "date": "2026.04.02 00:00 ~ 2026.12.20 23:59",
+   "org": "스마트ICT융합공학과",
+   "target": "전체",
+   "title": "2026학년도 학부생 연구 프로그램(Undergraduate Research Program)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
   "c4ea545f40885ccf": {
