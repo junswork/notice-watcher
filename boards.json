@@ -19,7 +19,11 @@
     "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do",
     "type": "epic",
     "bot": "KAKAOWORK_APP_KEY_EPIC",
-    "_주석": "로그인해서 보는 곳이라 자주 두드리면 봇으로 몰린다. 최소 3시간 간격.",
-    "min_interval_min": 180
+    "_주석": "로그인해서 보는 곳이라 자주 두드리면 봇으로 몰린다. 업무시간(08~19시)에만, 최소 1시간 간격으로 본다. 하루 로그인 11번.",
+    "min_interval_min": 60,
+    "active_hours": [
+      8,
+      19
+    ]
   }
 ]

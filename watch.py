@@ -163,6 +163,21 @@ def is_due(state: dict, name: str, min_interval_min: float) -> bool:
     return (time.time() - float(last)) >= min_interval_min * 60
 
 
+def in_active_hours(window, now_utc: float | None = None) -> bool:
+    """게시판마다 볼 시간대를 정한다. [시작, 끝) 이고 한국 시간 기준이다.
+
+    업무시간 밖에는 공지가 올라오지 않는다. 그 시간에 안 두드리면 로그인
+    횟수가 줄어 봇으로 몰릴 위험도 같이 내려간다. 비워 두면 하루 종일 본다.
+    """
+    if not window:
+        return True
+    start, end = window
+    kst = datetime.datetime.fromtimestamp(
+        now_utc if now_utc is not None else time.time(), datetime.timezone.utc
+    ) + datetime.timedelta(hours=9)
+    return start <= kst.hour < end
+
+
 def mark_checked(state: dict, name: str, min_interval_min: float) -> None:
     """확인 시각은 간격 제한을 두는 게시판만 기록한다.
 
@@ -404,17 +419,29 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", "", text).lower()
 
 
-def matched_keywords(title: str, body: str = "") -> list[str]:
-    """어느 키워드가 걸렸는지.
+def _contains(word: str, text: str) -> bool:
+    """글에 이 말이 들어 있나.
 
-    띄어쓰기를 무시하고 찾는다 — 공지 제목에는 '반 도 체' 처럼 자간을 벌려
-    쓴 것이 종종 있다.
+    한글은 띄어쓰기를 지우고 통째로 찾는다 — 공지 제목에는 '반 도 체' 처럼
+    자간을 벌려 쓴 것이 종종 있다.
+
+    영문은 그렇게 하면 안 된다. 'AI' 를 그냥 찾으면 e-mail 의 'ai', KAIST 의
+    'AI' 에도 걸린다(실측). 그래서 영문·숫자 키워드는 앞뒤가 글자가 아닐
+    때만 인정한다. 띄어쓰기를 지우지 않은 원문에서 찾아야 경계가 살아 있다.
     """
+    if word.isascii():
+        return re.search(
+            r"(?<![A-Za-z0-9])" + re.escape(word) + r"(?![A-Za-z0-9])", text, re.I
+        ) is not None
+    return _squash(word) in _squash(text)
+
+
+def matched_keywords(title: str, body: str = "") -> list[str]:
+    """어느 키워드가 걸렸는지."""
     anywhere, title_only = load_keywords()
-    in_title = _squash(title)
-    in_all = _squash(title + " " + body)
-    hits = [w for w in anywhere if _squash(w) in in_all]
-    hits += [w for w in title_only if _squash(w) in in_title and w not in hits]
+    both = title + " " + body
+    hits = [w for w in anywhere if _contains(w, both)]
+    hits += [w for w in title_only if _contains(w, title) and w not in hits]
     return hits
 
 
@@ -537,6 +564,9 @@ def main() -> int:
             if board.get("bot"):
                 print(f"[{name}] {board['bot']} 가 비어 공용 봇으로 보냅니다.")
         interval = float(board.get("min_interval_min", 0))
+        if not in_active_hours(board.get("active_hours")):
+            print(f"[{name}] 보는 시간대가 아닙니다. 건너뜁니다.")
+            continue
         if not is_due(state, name, interval):
             print(f"[{name}] 아직 확인할 때가 아닙니다. 건너뜁니다.")
             continue

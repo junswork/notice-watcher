@@ -325,6 +325,48 @@ def test_heartbeat_message():
     assert any(b["type"] == "button" for b in bad), "실패 시엔 버튼이 있어야 한다"
 
 
+def test_ascii_keyword_word_boundary():
+    """영문 키워드는 단어 단위로 찾아야 한다.
+
+    'AI' 를 그냥 찾으면 e-mail 의 'ai', KAIST 의 'AI' 에도 걸린다. 실제
+    공지에서 '정기주차 안내'(본문에 mail)와 KAIST 가 잘못 걸렸다.
+    """
+    real = watch.load_keywords
+    watch.load_keywords = lambda: (["AI", "반도체"], [])
+    try:
+        assert watch.matched_keywords("AI 커리어 프로그램") == ["AI"]
+        assert watch.matched_keywords("ST AI-CareerX 모집") == ["AI"]
+        assert watch.matched_keywords("「AI·ICT」 멘토링") == ["AI"]
+        # 다른 말 속에 묻힌 것은 세지 않는다.
+        assert watch.matched_keywords("정기주차 안내", "e-mail 로 신청") == []
+        assert watch.matched_keywords("KAIST 학점교류 안내") == []
+        assert watch.matched_keywords("available 프로그램") == []
+        # 한글은 붙여 써도 찾는다 (자간을 벌린 제목 때문).
+        assert watch.matched_keywords("반 도 체 특강") == ["반도체"]
+        assert watch.matched_keywords("반도체소부장혁신융합") == ["반도체"]
+    finally:
+        watch.load_keywords = real
+
+
+def test_active_hours():
+    """업무시간 밖에는 건너뛴다. 한국 시간 기준이다."""
+    import calendar
+    import datetime as dt
+
+    def at(hour):
+        kst = dt.datetime(2026, 9, 11, hour, 30) - dt.timedelta(hours=9)
+        return calendar.timegm(kst.timetuple())
+
+    assert watch.in_active_hours(None, at(3)), "시간대를 안 정했으면 항상 본다"
+    assert watch.in_active_hours([8, 19], at(8))
+    assert watch.in_active_hours([8, 19], at(13))
+    assert watch.in_active_hours([8, 19], at(18))
+    assert not watch.in_active_hours([8, 19], at(7)), "8시 전"
+    assert not watch.in_active_hours([8, 19], at(19)), "19시부터는 안 본다"
+    assert not watch.in_active_hours([8, 19], at(23))
+    assert not watch.in_active_hours([8, 19], at(3))
+
+
 def test_epic_parse_list():
     """비교과 목록: 항목 안에 <li> 가 중첩돼 있어도 항목별로 갈라야 한다."""
     import epic
