@@ -45,7 +45,13 @@ concurrency:
 
 jobs:
   watch:
-    runs-on: ubuntu-latest
+    # 어디서 돌릴지는 코드가 아니라 저장소 변수로 정한다. 자가 실행기로
+    # 옮기거나 되돌릴 때 커밋 없이 변수 하나만 바꾸면 된다.
+    #   깃허브 공용:  gh variable set RUNNER_LABEL --body ubuntu-latest
+    #   내 실행기:    gh variable set RUNNER_LABEL --body self-hosted
+    # 변수가 없으면 공용 실행기를 쓴다 — 새로 받아 쓰는 사람이 아무것도
+    # 설정하지 않아도 돌아가야 한다.
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
