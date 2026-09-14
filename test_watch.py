@@ -275,6 +275,15 @@ def test_blocks_shape():
         line = watch.format_message("새 글", "대학공지사항", rec, "")
         assert "대학공지사항" in line and "반도체 공정 교육" in line and "관심" in line
 
+        # 키워드가 걸려도 새 글과 수정은 구분해서 적는다. 둘 다 '관심 공지' 로만
+        # 뜨면 처음 보는 글인지 이미 아는 글이 고쳐진 것인지 알 수 없다.
+        fixed = watch.format_blocks("수정됨", "대학공지사항", rec, "삭제: 옛 줄")
+        assert fixed[0]["text"] == "관심 공지 수정", fixed[0]
+        assert fixed[0]["style"] == "red", fixed[0]
+        assert len(fixed[0]["text"]) <= 20
+        assert any(b.get("term") == "바뀐 내용" for b in fixed)
+        assert "[관심 공지 수정]" in watch.format_message("수정됨", "대학공지사항", rec, "")
+
         # 키워드가 안 걸리면 파란 머리.
         plain = {"title": "장학금 안내", "date": "2026-09-08", "url": "https://x/2", "body": ""}
         assert watch.format_blocks("새 글", "학사공지", plain, "")[0]["style"] == "blue"

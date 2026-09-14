@@ -491,9 +491,13 @@ def format_message(kind: str, board_name: str, record: dict, detail: str) -> str
 def format_blocks(kind: str, board_name: str, record: dict, detail: str) -> list:
     """말풍선 본문. 제목과 본문을 나누고 걸린 키워드를 빨갛게 칠한다."""
     hits = matched_keywords(record["title"], record.get("body", ""))
+    new = kind == "새 글"
+    # 키워드가 걸려도 새 글인지 수정인지는 구분해서 적는다. 둘 다 '관심 공지'
+    # 로만 뜨면 이미 아는 글이 고쳐진 것인지, 처음 보는 글인지 알 수 없다.
     if hits:
-        header = {"type": "header", "text": "관심 공지", "style": "red"}
-    elif kind == "새 글":
+        header = {"type": "header", "text": "관심 공지" if new else "관심 공지 수정",
+                  "style": "red"}
+    elif new:
         header = {"type": "header", "text": "새 공지", "style": "blue"}
     else:
         header = {"type": "header", "text": "공지 수정", "style": "yellow"}
