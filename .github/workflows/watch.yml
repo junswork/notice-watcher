@@ -27,9 +27,20 @@ on:
 
 permissions:
   contents: write           # state.json 을 되커밋하기 위해 필요하다
+  actions: read             # 생존 신호가 취소된 실행 수를 세기 위해
 
+# 겹쳐 돌지 않게 묶는다. 두 실행이 같은 시점의 기록을 보면 같은 공지를 두 번
+# 알리게 되는데, 중복 알림은 알림 자체의 무게를 떨어뜨린다.
+#
+# 대신 대가가 있다. 깃허브는 한 그룹에 대기 중인 실행을 하나만 두고, 셋째가
+# 오면 대기하던 것을 **취소**한다. 1분 간격으로 바꾼 뒤 깃허브가 느렸던 날
+# 하루 실행의 81% 가 취소됐고, 그날 에픽폴리오는 37시간 동안 한 번도 확인되지
+# 않았다(실측).
+#
+# 취소는 실패로 잡히지 않아 빨간불도 안 뜨고 감시 실패 알림도 안 간다. 그래서
+# 생존 신호가 지난 하루의 취소 건수를 세어 알려 준다(watch.run_stats).
 concurrency:
-  group: notice-watch       # 앞 실행이 안 끝났으면 겹쳐 돌지 않는다
+  group: notice-watch
   cancel-in-progress: false
 
 jobs:
@@ -53,6 +64,7 @@ jobs:
           # 위 선택칸의 값을 쓰고, 아무것도 안 고르면 새 글만 본다.
           WATCH_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '7 4,13 * * *' && 'full' || 'new') }}
           HEARTBEAT: ${{ inputs.heartbeat && '1' || '' }}
+          GITHUB_TOKEN: ${{ github.token }}
           KAKAOWORK_USER_EMAIL: ${{ secrets.KAKAOWORK_USER_EMAIL }}
           # 게시판별 봇. boards.json 의 "bot" 이름과 반드시 같아야 한다.
           # 게시판을 추가하면 여기에도 한 줄 넣어야 한다 — 깃허브는 등록한

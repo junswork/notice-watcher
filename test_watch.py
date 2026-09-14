@@ -292,6 +292,49 @@ def test_blocks_shape():
         watch.load_keywords = real
 
 
+def test_run_health():
+    """취소는 실패로 잡히지 않는다. 그래서 따로 세어 생존 신호에 적는다."""
+    assert watch.run_health(None) == ("", False)
+    assert watch.run_health({"success": 0, "cancelled": 0, "failure": 0}) == ("", False)
+
+    line, bad = watch.run_health({"success": 1400, "cancelled": 5, "failure": 0})
+    assert "1405회 중 성공 1400" in line and "취소 5" in line, line
+    assert not bad, "취소가 1할 미만이면 정상으로 본다"
+
+    # 실제로 겪은 날: 1422 회 중 1148 이 취소됐다.
+    line, bad = watch.run_health({"success": 270, "cancelled": 1148, "failure": 1})
+    assert bad, "취소가 8할인데 정상으로 봤다"
+    assert "취소 1148" in line and "실패 1" in line, line
+
+    # 실패만 많아도 이상으로 본다.
+    assert watch.run_health({"success": 10, "cancelled": 0, "failure": 5})[1]
+
+
+def test_heartbeat_reports_cancelled():
+    """생존 신호가 취소를 알려주고, 많으면 빨갛게 바뀐다."""
+    state = {"대학공지사항": {"1": {}}}
+    boards = [{"name": "대학공지사항"}]
+    sick = {"success": 270, "cancelled": 1148, "failure": 1}
+
+    blocks = watch.heartbeat_blocks(state, boards, {}, sick)
+    assert blocks[0]["style"] == "red" and blocks[0]["text"] == "감시 이상", blocks[0]
+    run = next(b for b in blocks if b.get("term") == "지난 하루 실행")
+    assert "취소 1148" in run["content"]["text"]
+    assert any(b["type"] == "button" for b in blocks), "실행 기록 버튼이 있어야 한다"
+    assert "감시 이상" in watch.heartbeat_message(state, boards, {}, sick)
+
+    # 정상이면 파란 머리에 실행 현황만 붙는다.
+    ok = watch.heartbeat_blocks(state, boards, {}, {"success": 1400, "cancelled": 2, "failure": 0})
+    assert ok[0]["style"] == "blue", ok[0]
+    assert any(b.get("term") == "지난 하루 실행" for b in ok)
+    assert not any(b["type"] == "button" for b in ok)
+
+    # 깃허브 밖에서 돌면 물어볼 수 없다. 그래도 생존 신호는 나가야 한다.
+    none = watch.heartbeat_blocks(state, boards, {}, None)
+    assert none[0]["style"] == "blue"
+    assert not any(b.get("term") == "지난 하루 실행" for b in none)
+
+
 def test_holiday_skip():
     """생존 신호는 공휴일에 보내지 않는다. 음력 명절도 걸러져야 한다."""
     import calendar

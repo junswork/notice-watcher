@@ -355,27 +355,101 @@ def is_korean_holiday(now_utc: float | None = None) -> bool:
     return kst.date() in holidays.SouthKorea(years=kst.year)
 
 
-def heartbeat_message(state: dict, boards: list, failures: dict) -> str:
+def run_stats(hours: int = 24) -> dict | None:
+    """지난 하루 실행이 어떻게 끝났는지 깃허브에 물어본다.
+
+    **취소(cancelled)는 실패가 아니다.** 빨간불도 안 뜨고, 감시 실패 알림도
+    가지 않는다. 완전한 사각지대였다.
+
+    겹쳐 돌지 않게 묶어 둔 탓에, 깃허브가 느린 날에는 대기하던 실행이 줄줄이
+    취소된다. 실제로 하루 실행의 81% 가 취소되고 에픽폴리오가 37시간 동안
+    확인되지 않은 날이 있었다. 그날도 '실패' 는 한 건뿐이라 아무도 몰랐다.
+
+    깃허브 안에서 돌 때만 동작한다. 못 물어보면 None 을 돌려주고 넘어간다 —
+    이것 때문에 생존 신호가 통째로 막히면 안 된다.
+    """
+    token = os.getenv("GITHUB_TOKEN", "")
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    if not token or not repo:
+        return None
+    since = (
+        datetime.datetime.now(datetime.timezone.utc)
+        - datetime.timedelta(hours=hours)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = {}
+    try:
+        for status in ("success", "cancelled", "failure"):
+            resp = requests.get(
+                f"https://api.github.com/repos/{repo}/actions/runs",
+                params={"created": f">{since}", "status": status, "per_page": 1},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                timeout=15,
+            )
+            if not resp.ok:
+                return None
+            out[status] = (resp.json() or {}).get("total_count", 0)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[생존] 실행 기록을 못 읽었습니다: {exc}")
+        return None
+    return out
+
+
+def run_health(stats: dict | None) -> tuple[str, bool]:
+    """실행 현황 한 줄과, 그게 문제인지 여부.
+
+    취소가 1할을 넘으면 확인이 그만큼 건너뛰어졌다는 뜻이다. 놓친 것은 없지만
+    (다음 실행이 같은 목록을 다시 본다) 발견이 그만큼 늦어진다.
+    """
+    if not stats:
+        return "", False
+    total = sum(stats.values())
+    if total == 0:
+        return "", False
+    bad = stats["cancelled"] + stats["failure"]
+    line = f"{total}회 중 성공 {stats['success']}"
+    if stats["cancelled"]:
+        line += f", 취소 {stats['cancelled']}"
+    if stats["failure"]:
+        line += f", 실패 {stats['failure']}"
+    return line, bad / total > 0.1
+
+
+def heartbeat_message(state: dict, boards: list, failures: dict,
+                      stats: dict | None = None) -> str:
     """푸시에 뜰 한 줄. 조용한 것이 '공지가 없어서' 인지 '멈춰서' 인지 가른다."""
     if failures:
         return f"[감시 이상] {len(failures)}곳이 실패 중입니다"
+    _, unhealthy = run_health(stats)
+    if unhealthy:
+        return f"[감시 이상] 확인이 자주 건너뛰어지고 있습니다"
     return f"[생존 신호] 게시판 {len(boards)}곳 정상 감시 중"
 
 
-def heartbeat_blocks(state: dict, boards: list, failures: dict) -> list:
+def heartbeat_blocks(state: dict, boards: list, failures: dict,
+                     stats: dict | None = None) -> list:
     kst = datetime.datetime.fromtimestamp(
         time.time(), datetime.timezone.utc
     ) + datetime.timedelta(hours=9)
     요일 = "월화수목금토일"[kst.weekday()]
 
+    line, unhealthy = run_health(stats)
+    bad = bool(failures) or unhealthy
     blocks = [
         {
             "type": "header",
-            "text": "감시 이상" if failures else "정상 감시 중",
-            "style": "red" if failures else "blue",
+            "text": "감시 이상" if bad else "정상 감시 중",
+            "style": "red" if bad else "blue",
         },
         {"type": "text", "text": f"{kst:%Y-%m-%d} ({요일}) {kst:%H:%M}"},
     ]
+    if line:
+        blocks.append({
+            "type": "description", "term": "지난 하루 실행", "accent": True,
+            "content": {"type": "text", "text": line},
+        })
     for board in boards:
         name = board["name"]
         count = len(state.get(name, {}))
@@ -394,7 +468,12 @@ def heartbeat_blocks(state: dict, boards: list, failures: dict) -> list:
         blocks.append(
             {"type": "description", "term": name, "accent": True, "content": content}
         )
-    if failures:
+    if unhealthy:
+        blocks.append({
+            "type": "text",
+            "text": "확인이 자주 건너뛰어졌습니다. 깨우는 주기를 늘리는 것이 좋습니다.",
+        })
+    if bad:
         blocks.append({
             "type": "button", "text": "실행 기록 보기", "style": "primary",
             "action": {"type": "open_system_browser", "name": "actions",
@@ -640,10 +719,11 @@ def main() -> int:
                 (os.getenv(b.get("bot", ""), "") for b in boards if os.getenv(b.get("bot", ""), "")),
                 os.getenv("KAKAOWORK_APP_KEY", ""),
             )
+            stats = run_stats()
             ok = notify.send(
-                heartbeat_message(state, boards, failures),
+                heartbeat_message(state, boards, failures, stats),
                 key,
-                heartbeat_blocks(state, boards, failures),
+                heartbeat_blocks(state, boards, failures, stats),
             )
             if not ok:
                 failed = True
