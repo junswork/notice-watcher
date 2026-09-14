@@ -55,12 +55,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - run: pip install -r requirements.txt
+      # 파이썬을 따로 설치하지 않는다. 깃허브 공용 실행기든 우분투 24.04 를
+      # 올린 내 실행기든 파이썬 3.12 가 이미 들어 있다. setup-python 은 공용
+      # 실행기에서는 미리 받아 둔 것을 쓰지만, 내 실행기에서는 매번 내려받아
+      # **76초**를 먹었다(실측). 1분마다 도는 프로그램에서는 치명적이다.
+      #
+      # 라이브러리는 가상환경에 한 번만 깔고 다음 실행부터 그대로 쓴다.
+      # 공용 실행기는 매번 새 기계라 어차피 새로 깔리고, 내 실행기는 남아 있다.
+      #
+      # 가상환경은 작업 폴더 밖(홈)에 둔다. checkout 은 매 실행마다 작업
+      # 폴더를 깨끗이 비우므로(git clean -ffdx) 안에 두면 그때마다 지워진다.
+      - name: 파이썬 준비
+        run: |
+          VENV=$HOME/.venv-notice
+          if [ ! -x "$VENV/bin/python" ]; then
+            python3 -m venv "$VENV"
+          fi
+          "$VENV/bin/pip" install --quiet --upgrade -r requirements.txt
+          "$VENV/bin/python" -V
 
       - name: 게시판 확인
         id: run
@@ -84,7 +96,7 @@ jobs:
           EPIC_PW: ${{ secrets.EPIC_PW }}
           # 위 봇이 아직 없는 게시판이 쓰는 공용 봇
           KAKAOWORK_APP_KEY: ${{ secrets.KAKAOWORK_APP_KEY }}
-        run: python watch.py
+        run: $HOME/.venv-notice/bin/python watch.py
 
       - name: 확인 결과 저장
         # 성공한 부분까지는 반드시 남긴다. 남기지 않으면 다음 실행이
