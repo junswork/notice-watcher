@@ -292,6 +292,46 @@ def test_blocks_shape():
         watch.load_keywords = real
 
 
+def test_merge_state():
+    """push 가 거부됐을 때 두 기록을 합친다.
+
+    한쪽을 버리면 그 실행이 이미 보낸 알림의 기록이 사라져 같은 공지를 또
+    알리게 된다. 중복 알림은 절대 나오면 안 된다.
+    """
+    import merge_state
+
+    remote = {
+        "대학공지": {"111": {"title": "가", "hash": "a"}},
+        "__checked__": {"에픽": 1000.0},
+    }
+    mine = {
+        "대학공지": {"222": {"title": "나", "hash": "b"}},
+        "__checked__": {"에픽": 900.0},
+    }
+    out = merge_state.merge(remote, mine)
+
+    # 양쪽 게시물이 모두 남아야 어느 쪽도 다시 알리지 않는다.
+    assert set(out["대학공지"]) == {"111", "222"}, out
+    # 확인 시각은 나중 것을 쓴다. 되돌리면 뜸하게 볼 게시판을 너무 자주 본다.
+    assert out["__checked__"]["에픽"] == 1000.0
+
+    # 같은 게시물이면 내 쪽(방금 읽어 온 최신)을 남긴다.
+    out = merge_state.merge(
+        {"대학공지": {"111": {"hash": "옛것"}}},
+        {"대학공지": {"111": {"hash": "새것"}}},
+    )
+    assert out["대학공지"]["111"]["hash"] == "새것", out
+
+    # 한쪽에만 있는 게시판도 살아남는다.
+    out = merge_state.merge({"가게시판": {"1": {}}}, {"나게시판": {"2": {}}})
+    assert set(out) == {"가게시판", "나게시판"}
+
+    # 원본을 건드리지 않는다.
+    r = {"게시판": {"1": {}}}
+    merge_state.merge(r, {"게시판": {"2": {}}})
+    assert set(r["게시판"]) == {"1"}, "원본이 바뀌었다"
+
+
 def test_run_health():
     """취소는 실패로 잡히지 않는다. 그래서 따로 세어 생존 신호에 적는다."""
     assert watch.run_health(None) == ("", False)

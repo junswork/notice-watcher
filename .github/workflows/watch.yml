@@ -101,13 +101,41 @@ jobs:
       - name: 확인 결과 저장
         # 성공한 부분까지는 반드시 남긴다. 남기지 않으면 다음 실행이
         # 이미 알린 공지를 새 글로 착각해 같은 알림을 또 보낸다.
+        #
+        # push 가 거부되는 일이 하루 몇 번 있다. 에픽폴리오는 로그인을 해야 해서
+        # 실행이 57초까지 늘어나는데, 1분마다 깨우므로 그 사이에 다음 실행이
+        # 앞 실행이 아직 push 하지 않은 코드를 받아 간다(실측). 그러면 나중
+        # 것의 push 가 non-fast-forward 로 거부된다.
+        #
+        # 거부된 쪽을 버리면 그 실행이 이미 보낸 알림의 기록까지 사라져 중복
+        # 알림이 된다. 그래서 원격 기록과 **합쳐서** 다시 올린다.
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state.json
           git diff --staged --quiet && echo "변화 없음" && exit 0
-          git commit -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push
+          git commit -q -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+
+          for try in 1 2 3; do
+            if git push -q origin HEAD:master 2>/dev/null; then
+              echo "저장 완료 (시도 $try)"
+              exit 0
+            fi
+            echo "push 거부됨 ($try/3). 원격 기록과 합칩니다."
+            git fetch -q origin master
+            git show origin/master:state.json > /tmp/remote_state.json
+            "$HOME/.venv-notice/bin/python" merge_state.py /tmp/remote_state.json state.json
+            git reset -q --soft origin/master
+            git add state.json
+            if git diff --staged --quiet; then
+              echo "합치고 보니 원격과 같습니다. 올릴 것이 없습니다."
+              exit 0
+            fi
+            git commit -q -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+          done
+          echo "세 번 시도했는데도 저장하지 못했습니다."
+          exit 1
 
       - name: 실패했으면 빨간불로 남긴다
         if: steps.run.outcome == 'failure'
