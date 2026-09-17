@@ -80,13 +80,24 @@ def send_kakaowork(message: str, app_key: str = "", blocks: list | None = None) 
         if blocks:
             body["blocks"] = blocks
         headers = {"Authorization": f"Bearer {app_key}"}
-        for attempt in range(2):
-            resp = requests.post(
-                f"{KAKAOWORK_BASE}/v1/messages.send",
-                headers=headers,
-                json=body,
-                timeout=TIMEOUT,
-            )
+        for attempt in range(3):
+            try:
+                resp = requests.post(
+                    f"{KAKAOWORK_BASE}/v1/messages.send",
+                    headers=headers,
+                    json=body,
+                    timeout=TIMEOUT,
+                )
+            except requests.RequestException as exc:
+                # 연결이 순간 끊기는 일이 있다(실측: RemoteDisconnected).
+                # 여기서 포기하면 그 공지는 다음 확인 때까지 밀린다. 수정
+                # 알림은 하루 몇 번뿐인 full 실행에서만 다시 잡히므로 몇
+                # 시간이 밀린다. 잠깐 쉬고 다시 보내는 편이 훨씬 싸다.
+                if attempt == 2:
+                    raise
+                print(f"[알림] 연결이 끊겼습니다. 다시 시도합니다 ({attempt + 1}/3): {exc}")
+                time.sleep(2.0 * (attempt + 1))
+                continue
             if resp.status_code == 429:
                 time.sleep(2.0)
                 continue
