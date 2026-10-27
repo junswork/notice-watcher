@@ -1,18 +1,18 @@
 {
  "__checked__": {
-  "에픽폴리오 비교과": 1793081254.1735775
+  "에픽폴리오 비교과": 1793084924.4174676
  },
  "__failures__": {
   "대학공지사항": {
-   "count": 77,
+   "count": 78,
    "notified": 1793080138.5677927
   },
   "생활관 공지": {
-   "count": 77,
+   "count": 78,
    "notified": 1793080140.4303765
   },
   "학사공지": {
-   "count": 77,
+   "count": 78,
    "notified": 1793080139.494406
   }
  },
@@ -1353,6 +1353,14 @@
    "org": "취업진로본부",
    "target": "전체",
    "title": "2026학년도 필기전형(NCS) 전략 특강 및 합격 진단 평가",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "cd19059717553e05": {
+   "applied": "",
+   "date": "2026.10.01 00:00 ~ 2026.12.21 23:59",
+   "org": "교양대학",
+   "target": "전체",
+   "title": "2026-2 교양교과-비교과 연계 RDR(Reading-Debate-Reflection) 프로그램 서평공모전",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
   "d9087eeea523be64": {
