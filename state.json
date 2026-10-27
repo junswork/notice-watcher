@@ -4,15 +4,15 @@
  },
  "__failures__": {
   "대학공지사항": {
-   "count": 1,
+   "count": 2,
    "notified": 0
   },
   "생활관 공지": {
-   "count": 1,
+   "count": 2,
    "notified": 0
   },
   "학사공지": {
-   "count": 1,
+   "count": 2,
    "notified": 0
   }
  },
