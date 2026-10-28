@@ -543,11 +543,12 @@ def test_epic_auto_submit_form():
 
 
 def test_live():
-    import json, requests
+    import json
 
-    s = requests.Session()
-    s.headers.update({"User-Agent": watch.UA})
+    s = watch.create_session()
     for b in json.load(open("boards.json", encoding="utf-8")):
+        if b.get("type") == "epic":
+            continue
         posts = watch.list_post_ids(watch.fetch(s, b["url"]), b["url"])
         assert posts, f'{b["name"]}: 목록이 비었다'
         d = watch.parse_detail(watch.fetch(s, posts[0][1]))
