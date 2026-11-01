@@ -1,6 +1,6 @@
 {
  "__checked__": {
-  "에픽폴리오 비교과": 1793524202.8709354
+  "에픽폴리오 비교과": 1793574064.5832424
  },
  "대학공지사항": {
   "893540": {
@@ -1166,6 +1166,14 @@
    "title": "[메이커] 레이저커팅기 장비교육",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
+  "2e0b039341b18f19": {
+   "applied": "0/400명",
+   "date": "2026.11.02 00:00 ~ 2026.11.16 23:59",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026-2-러닝코어-수학(기하)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
   "35131c8abfc45290": {
    "applied": "2/100명",
    "date": "2026.08.26 00:00 ~ 2026.09.08 17:00",
@@ -1180,6 +1188,14 @@
    "org": "취업진로본부",
    "target": "전체",
    "title": "[취업특강] 대학생 진로설정법 및 학년별 TO-DO (11/3)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "38f0051c8abe8b3c": {
+   "applied": "0/400명",
+   "date": "2026.11.02 00:00 ~ 2026.11.16 23:59",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026-2-러닝코어-과학(물리학1)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
   "3c8b7f5d1b48a6a1": {
@@ -1286,6 +1302,14 @@
    "title": "2026학년도 맞춤형 온라인 심리검사 신입생 대상 IESS 통합 스트레스검사",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
+  "7c11c2040dfa9ab6": {
+   "applied": "0/400명",
+   "date": "2026.11.02 00:00 ~ 2026.11.16 23:59",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026-2-러닝코어-영어(TOEIC)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
   "7c17ff102eaea47c": {
    "applied": "29/70명",
    "date": "2026.08.07 14:00 ~ 2026.09.11 18:00",
@@ -1358,12 +1382,28 @@
    "title": "[자유전공 적응지원 프로그램] 심리 마피아 참가자 모집(전학과 신청 가능)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
+  "acdc951043327876": {
+   "applied": "0/400명",
+   "date": "2026.11.02 00:00 ~ 2026.11.16 23:59",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026-2-러닝코어-인공지능(정보)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
   "b365f78996b85505": {
    "applied": "2/70명",
    "date": "2026.09.01 00:00 ~ 2026.09.10 15:00",
    "org": "취업진로본부",
    "target": "전체",
    "title": "[채용설명회] 엠피더블유코리아 채용설명회 (9월 11일)",
+   "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
+  },
+  "b47978aab4697a21": {
+   "applied": "0/400명",
+   "date": "2026.11.02 00:00 ~ 2026.11.16 23:59",
+   "org": "교수학습개발센터",
+   "target": "전체",
+   "title": "2026-2-러닝코어-수학(미적분)",
    "url": "https://epic.seoultech.ac.kr/ptfol/imng/icmpNsbjtPgm/findIcmpNsbjtPgmList.do"
   },
   "b88cbbf6647642bf": {
