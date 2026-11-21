@@ -4,20 +4,20 @@
  },
  "__failures__": {
   "대학공지사항": {
-   "count": 2,
-   "notified": 0
+   "count": 3,
+   "notified": 1795302728.4687335
   },
   "생활관 공지": {
-   "count": 2,
-   "notified": 0
+   "count": 3,
+   "notified": 1795302730.391799
   },
   "에픽폴리오 비교과": {
-   "count": 11,
+   "count": 12,
    "notified": 1795302168.2233121
   },
   "학사공지": {
-   "count": 2,
-   "notified": 0
+   "count": 3,
+   "notified": 1795302729.4379928
   }
  },
  "대학공지사항": {
