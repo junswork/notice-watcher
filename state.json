@@ -1162,7 +1162,6 @@
    "url": "https://www.seoultech.ac.kr/service/info/notice/?do=commonview&searchtext=&searchtype=-1&nowpage=1&bnum=4691&bidx=897881&qidx=4691&cate=10&allboard=false&nowpage=1"
   },
   "897889": {
-   "body": "리눅스 커널 보안취약점 패치 및 메트로스위치 OS 업그레이드로 인하여 다음과 같이 학내 정보시스템의 서비스 및 인터넷 서비스가 중지됨을 알려드립니다.\n1. 일 시: 2026. 11. 22.(일) 08:00~11:00\n* 상기 작업 시간은 변동될 수 있음\n2. 사 유: 리눅스 커널 보안취약점 패치 및 매트로스위치 OS 업그레이드\n3. 대상서비스: 모든 정보서비스 및 인터넷서비스 중지\n- 학내 전체 정보서비스(홈페이지, 코러스, 통합정보, e-Class, 산학연구지원시스템 등)\n- 학내 전체 유무선 인터넷 서비스\n4. 문 의: 정보전산원(9064, 9055, 9054)",
    "date": "2026-11-18",
    "hash": "add3a52ef15be526",
    "title": "학내 정보시스템 및 전체 인터넷 서비스 일시 중단 안내",
@@ -1348,6 +1347,13 @@
    "hash": "ae7b8ef87a59dd8b",
    "title": "[생활협동조합] '테크뇽 텀블러' 출시 안내(구매 시 커피 쿠폰 증정)",
    "url": "https://www.seoultech.ac.kr/service/info/notice/?do=commonview&searchtext=&searchtype=-1&nowpage=1&bnum=4691&bidx=898236&qidx=4691&cate=10&allboard=false&nowpage=1"
+  },
+  "898238": {
+   "body": "보안 취약점 개선을 위한 클라우드 서비스 플랫폼 업그레이드로 인해 다음과 같이 정보시스템 서비스가 중단됩니다.\n1. 일 시: 2026. 12. 2.(수) 19:00 ~ 12.3.(목) 04:00\n* 상기 작업 시간은 변동될 수 있음\n2. 사 유: 보안 취약점 개선을 위한 클라우드 서비스 플랫폼 업그레이드\n3. 대상서비스:\n- 통합정보시스템(교직원, 학생, 채용접수, 한국어접수)\n- 스마트캠퍼스앱(모바일 신분증 사용 불가)\n- 홈페이지(대표, 대학, 대학원 학과, 부서 홈페이지)\n4. 문 의: 정보전산원(9055, 9054, 9064 )",
+   "date": "2026-11-27",
+   "hash": "d932a3d7e30e737b",
+   "title": "(서비스 중단 안내) 통합정보시스템, 스마트캠퍼스앱, 홈페이지",
+   "url": "https://www.seoultech.ac.kr/service/info/notice/?do=commonview&searchtext=&searchtype=-1&nowpage=1&bnum=4691&bidx=898238&qidx=4691&cate=10&allboard=false&nowpage=1"
   }
  },
  "생활관 공지": {
